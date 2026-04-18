@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"smith/types"
 )
@@ -19,6 +20,9 @@ type HTTPProvider struct {
 	APIKey  string
 	Model   string
 }
+
+// defaultTimeout is the HTTP client timeout for provider requests.
+const defaultTimeout = 60 * time.Second
 
 // chatRequest is the JSON request body for the chat completions endpoint.
 type chatRequest struct {
@@ -44,6 +48,20 @@ type streamDelta struct {
 // streamChunk is a JSON line from the SSE stream.
 type streamChunk struct {
 	Choices []streamChoice `json:"choices"`
+}
+
+// processSSELine handles a complete SSE event payload and sends tokens to the channel.
+func processSSELine(payload string, ch chan<- string) {
+	if payload == "[DONE]" {
+		return
+	}
+	var chunk streamChunk
+	if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+		return
+	}
+	if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+		ch <- chunk.Choices[0].Delta.Content
+	}
 }
 
 // Complete sends the conversation to the model and returns a channel of
@@ -76,7 +94,8 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	httpClient := &http.Client{Timeout: defaultTimeout}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -100,13 +119,7 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 				if payload == "[DONE]" {
 					return
 				}
-				var chunk streamChunk
-				if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-					continue
-				}
-				if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-					ch <- chunk.Choices[0].Delta.Content
-				}
+				processSSELine(payload, ch)
 			}
 		}
 	}()

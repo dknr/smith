@@ -1,8 +1,13 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"smith/agent"
 	"smith/llm"
@@ -21,8 +26,10 @@ var upgrader = websocket.Upgrader{
 
 // Serve starts a WebSocket server on the given address that processes messages
 // through an LLM agent and sends responses back to the client.
+// It shuts down gracefully on SIGINT or SIGTERM.
 func Serve(addr string, provider llm.Provider, logger *slog.Logger) error {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			logger.Error("websocket upgrade failed", "error", err)
@@ -72,6 +79,24 @@ func Serve(addr string, provider llm.Provider, logger *slog.Logger) error {
 		conn.Close()
 	})
 
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	// Listen for shutdown signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		logger.Info("shutting down server...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			logger.Error("server shutdown error", "error", err)
+		}
+	}()
+
 	logger.Info("starting websocket server", "addr", addr)
-	return http.ListenAndServe(addr, nil)
+	return srv.ListenAndServe()
 }
