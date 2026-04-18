@@ -12,31 +12,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Send connects to the server, sends a message, prints all responses until done, then exits.
-func Send(addr, message string, logger *slog.Logger) error {
+// dial connects to a WebSocket server, adding the ws:// prefix if needed.
+func dial(addr string) (*websocket.Conn, error) {
 	if !strings.HasPrefix(addr, "ws://") && !strings.HasPrefix(addr, "wss://") {
 		addr = "ws://" + addr
 	}
 	conn, _, err := websocket.DefaultDialer.Dial(addr, nil)
-	if err != nil {
-		return fmt.Errorf("failed to connect to server: %w", err)
-	}
-	defer conn.Close()
+	return conn, err
+}
 
-	req := types.Request{
-		ID:      "1",
-		Role:    "user",
-		Content: message,
-	}
-	data, err := types.MarshalRequest(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
-	}
-
+// readLoop reads streaming responses from the server, printing deltas as they arrive.
+// Returns on error or when done=true is received.
+func readLoop(conn *websocket.Conn, logger *slog.Logger) error {
 	var lastContent string
 	for {
 		_, resp, err := conn.ReadMessage()
@@ -57,20 +44,40 @@ func Send(addr, message string, logger *slog.Logger) error {
 
 		if r.Done {
 			fmt.Println()
-			break
+			return nil
 		}
 	}
+}
 
-	return nil
+// Send connects to the server, sends a message, prints all responses until done, then exits.
+func Send(addr, message string, logger *slog.Logger) error {
+	conn, err := dial(addr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to server: %w", err)
+	}
+	defer conn.Close()
+
+	req := types.Request{
+		ID:      "1",
+		Role:    "user",
+		Content: message,
+	}
+	data, err := types.MarshalRequest(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+
+	return readLoop(conn, logger)
 }
 
 // Chat starts an interactive session with the server.
 // Type messages to send, /quit to exit.
 func Chat(addr string, logger *slog.Logger) error {
-	if !strings.HasPrefix(addr, "ws://") && !strings.HasPrefix(addr, "wss://") {
-		addr = "ws://" + addr
-	}
-	conn, _, err := websocket.DefaultDialer.Dial(addr, nil)
+	conn, err := dial(addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -78,7 +85,6 @@ func Chat(addr string, logger *slog.Logger) error {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	msgID := 0
-	var lastContent string
 
 	for {
 		fmt.Print("> ")
@@ -111,29 +117,9 @@ func Chat(addr string, logger *slog.Logger) error {
 			break
 		}
 
-		for {
-			_, resp, err := conn.ReadMessage()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "connection closed: %v\n", err)
-				return err
-			}
-
-			r, err := types.UnmarshalResponse(resp)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				break
-			}
-
-			if len(r.Content) > len(lastContent) {
-				fmt.Print(r.Content[len(lastContent):])
-			}
-			lastContent = r.Content
-			logger.Debug("received response", "id", r.ID, "done", r.Done, "data", r.Content)
-
-			if r.Done {
-				fmt.Println()
-				break
-			}
+		if err := readLoop(conn, logger); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			break
 		}
 	}
 
