@@ -16,11 +16,13 @@ import (
 
 var (
 	listenAddr string
+	version    = "dev"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "smith",
-	Short: "smith - an LLM agent client/server",
+	Use:     "smith",
+	Short:   "smith - an LLM agent client/server",
+	Version: version,
 }
 
 func runWithLogger(programName string, fn func(logger *slog.Logger) error) {
