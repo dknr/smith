@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"smith/client"
+	"smith/config"
+	"smith/llm"
 	"smith/logging"
 	"smith/server"
 
@@ -27,7 +29,15 @@ var serveCmd = &cobra.Command{
 		logger, cleanup := logging.Setup("smith")
 		defer cleanup()
 
-		if err := server.Serve(listenAddr, logger); err != nil {
+		cfg, err := config.Load()
+		if err != nil {
+			logger.Error("config error", "error", err)
+			os.Exit(1)
+		}
+
+		provider := llm.NewProvider(cfg)
+
+		if err := server.Serve(listenAddr, provider, logger); err != nil {
 			logger.Error("server error", "error", err)
 			os.Exit(1)
 		}

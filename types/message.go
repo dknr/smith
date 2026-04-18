@@ -2,6 +2,12 @@ package types
 
 import "encoding/json"
 
+// Message represents a single message in a conversation.
+type Message struct {
+	Role    string
+	Content string
+}
+
 // Request represents a message from the client to the server.
 type Request struct {
 	ID      string `json:"id"`
