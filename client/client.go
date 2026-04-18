@@ -37,6 +37,7 @@ func Send(addr, message string, logger *slog.Logger) error {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
+	var lastContent string
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
@@ -48,10 +49,14 @@ func Send(addr, message string, logger *slog.Logger) error {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		fmt.Println(r.Content)
+		if len(r.Content) > len(lastContent) {
+			fmt.Print(r.Content[len(lastContent):])
+		}
+		lastContent = r.Content
 		logger.Debug("received response", "id", r.ID, "done", r.Done, "data", r.Content)
 
 		if r.Done {
+			fmt.Println()
 			break
 		}
 	}
@@ -73,6 +78,7 @@ func Chat(addr string, logger *slog.Logger) error {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	msgID := 0
+	var lastContent string
 
 	for {
 		fmt.Print("> ")
@@ -118,10 +124,14 @@ func Chat(addr string, logger *slog.Logger) error {
 				break
 			}
 
-			fmt.Println(r.Content)
+			if len(r.Content) > len(lastContent) {
+				fmt.Print(r.Content[len(lastContent):])
+			}
+			lastContent = r.Content
 			logger.Debug("received response", "id", r.ID, "done", r.Done, "data", r.Content)
 
 			if r.Done {
+				fmt.Println()
 				break
 			}
 		}

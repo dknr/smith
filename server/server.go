@@ -47,23 +47,25 @@ func Serve(addr string, provider llm.Provider, logger *slog.Logger) error {
 
 			logger.Debug("received message", "id", req.ID, "content", req.Content)
 
-			resp, err := agent.ProcessMessage(r.Context(), req.Content)
+			respCh, err := agent.ProcessMessage(r.Context(), req.Content)
 			if err != nil {
 				logger.Error("agent error", "error", err)
 				continue
 			}
 
-			resp.ID = req.ID
+			for resp := range respCh {
+				resp.ID = req.ID
 
-			data, err := types.MarshalResponse(*resp)
-			if err != nil {
-				logger.Error("failed to marshal response", "error", err)
-				continue
-			}
+				data, err := types.MarshalResponse(*resp)
+				if err != nil {
+					logger.Error("failed to marshal response", "error", err)
+					break
+				}
 
-			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				logger.Error("failed to write response", "error", err)
-				break
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					logger.Error("failed to write response", "error", err)
+					break
+				}
 			}
 		}
 

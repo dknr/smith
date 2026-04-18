@@ -1,12 +1,14 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"smith/types"
 )
@@ -22,7 +24,7 @@ type HTTPProvider struct {
 type chatRequest struct {
 	Model    string      `json:"model"`
 	Messages []msgEntry  `json:"messages"`
-	Stream   bool        `json:"stream,omitempty"`
+	Stream   bool        `json:"stream"`
 }
 
 type msgEntry struct {
@@ -30,17 +32,23 @@ type msgEntry struct {
 	Content string `json:"content"`
 }
 
-// chatResponse is the JSON response body from the chat completions endpoint.
-type chatResponse struct {
-	Choices []choiceEntry `json:"choices"`
+// streamChoice is a single choice entry from a streaming chunk.
+type streamChoice struct {
+	Delta streamDelta `json:"delta"`
 }
 
-type choiceEntry struct {
-	Message msgEntry `json:"message"`
+type streamDelta struct {
+	Content string `json:"content"`
 }
 
-// Complete sends the conversation to the model and returns the response text.
-func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (string, error) {
+// streamChunk is a JSON line from the SSE stream.
+type streamChunk struct {
+	Choices []streamChoice `json:"choices"`
+}
+
+// Complete sends the conversation to the model and returns a channel of
+// streaming tokens. The channel is closed when the response is complete.
+func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (<-chan string, error) {
 	msgs := make([]msgEntry, len(messages))
 	for i, m := range messages {
 		msgs[i] = msgEntry{Role: m.Role, Content: m.Content}
@@ -49,17 +57,18 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 	body := chatRequest{
 		Model:    p.Model,
 		Messages: msgs,
+		Stream:   true,
 	}
 
 	data, err := json.Marshal(body)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	url := p.BaseURL + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -69,23 +78,38 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return "", fmt.Errorf("api error: status %d", resp.StatusCode)
+		resp.Body.Close()
+		return nil, fmt.Errorf("api error: status %d", resp.StatusCode)
 	}
 
-	var apiResp chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
+	ch := make(chan string, 10)
+	go func() {
+		defer resp.Body.Close()
+		defer close(ch)
 
-	if len(apiResp.Choices) == 0 {
-		return "", nil
-	}
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") {
+				payload := strings.TrimPrefix(line, "data: ")
+				if payload == "[DONE]" {
+					return
+				}
+				var chunk streamChunk
+				if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+					continue
+				}
+				if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+					ch <- chunk.Choices[0].Delta.Content
+				}
+			}
+		}
+	}()
 
-	return apiResp.Choices[0].Message.Content, nil
+	return ch, nil
 }
