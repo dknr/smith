@@ -1,8 +1,12 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+
+	"smith/agent"
+	"smith/types"
 
 	"github.com/gorilla/websocket"
 )
@@ -15,7 +19,30 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// Serve starts a WebSocket server on the given address that echoes all received messages back to the sender.
+// EchoHandler is a placeholder handler that echoes messages back.
+type EchoHandler struct{}
+
+func (h *EchoHandler) Handle(ctx context.Context, messages []agent.Message) (<-chan types.Response, error) {
+	ch := make(chan types.Response, 1)
+	go func() {
+		defer close(ch)
+		// Find the last user message
+		var lastUserMsg string
+		for _, m := range messages {
+			if m.Role == "user" {
+				lastUserMsg = m.Content
+			}
+		}
+		ch <- types.Response{
+			Content: lastUserMsg,
+			Done:    true,
+		}
+	}()
+	return ch, nil
+}
+
+// Serve starts a WebSocket server on the given address that processes messages
+// through an agent and streams responses back to the client.
 func Serve(addr string, logger *slog.Logger) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -25,18 +52,39 @@ func Serve(addr string, logger *slog.Logger) error {
 		}
 		logger.Info("client connected", "remote", conn.RemoteAddr().String())
 
+		agent := agent.New(&EchoHandler{})
+
 		for {
-			msgType, msg, err := conn.ReadMessage()
+			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				logger.Info("client disconnected", "remote", conn.RemoteAddr().String())
 				break
 			}
 
-			logger.Debug("received message", "data", string(msg))
+			req, err := types.UnmarshalRequest(msg)
+			if err != nil {
+				logger.Error("failed to parse request", "error", err)
+				continue
+			}
 
-			if err := conn.WriteMessage(msgType, msg); err != nil {
-				logger.Error("failed to write message", "error", err)
-				break
+			logger.Debug("received message", "id", req.ID, "content", req.Content)
+
+			respCh, err := agent.ProcessMessage(r.Context(), req.Content)
+			if err != nil {
+				logger.Error("agent error", "error", err)
+				continue
+			}
+
+			for resp := range respCh {
+				data, err := types.MarshalResponse(resp)
+				if err != nil {
+					logger.Error("failed to marshal response", "error", err)
+					break
+				}
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					logger.Error("failed to write response", "error", err)
+					break
+				}
 			}
 		}
 
