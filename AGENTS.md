@@ -35,12 +35,15 @@ logging/logging.go   — Dual-output slog setup (file + stdout)
 
 ## Key patterns
 
-- **Provider interface** (`llm/provider.go`): All LLM backends implement `Complete(ctx, msgs) (<-chan string, error)` for streaming and `Call(ctx, msgs, tools) (CallResult, error)` for structured/one-shot calls.
+- **Provider interface** (`llm/provider.go`): All LLM backends implement `Complete(ctx, msgs) (<-chan string, error)` for streaming and `Call(ctx, msgs, tools) (CallResult, error)` for structured/one-shot calls. `CallResult` includes `Usage` and `Timing` parsed from the provider's JSON response body.
 - **Tool registry** (`tools/tools.go`): Tools are registered in `NewRegistry()` and exposed via `Definitions()` for the LLM and `Execute()` for dispatch. New tools are added by registering a `toolFunc` and a `ToolDef` in `toolDefs`.
 - **Streaming protocol**: Server sends incremental `Response` objects with `Done=false`, final one with `Done=true`. Client diffs content to show deltas.
 - **Session sync**: Clients send `Request{Sync: true}` to receive full history. Server responds with history messages then `SyncComplete: true`.
 - **History immutability**: `Agent.History()` returns a defensive copy. Internal history is protected by `sync.Mutex`.
 - **Config**: `smith.toml` requires `base_url` and `model`. Loaded from XDG config dir (`$XDG_CONFIG_HOME/smith/` or `~/.config/smith/`).
+- **Error responses**: Provider errors use `Role: "error"` (not `"assistant"`), enabling the client to distinguish them from LLM content.
+- **Client modes**: `Chat` colorizes tool calls (yellow), errors (red), and shows a grey stats line (`HH:MM:SS | X (Y/s) => Z (W/s) => N (T.s)`). `Send` suppresses tool calls and stats, printing only the final response.
+- **New sessions**: On first connect, chat prints a grey `"HH:MM:SS | New session"` banner.
 
 ## Testing
 
@@ -65,3 +68,4 @@ go test ./package/... -v -run TestName     # Verbose
 - **Protocol logger**: When `--log-protocol` is passed to `serve`, full request/response JSON is written to `smith-protocol.log`.
 - **Default listen address**: `localhost:26856`. Only change with `-a` if the port is already in use.
 - **Go 1.25**: Uses `log/slog` and `sqlite3` from `ncruces` (WASM-optimized). Don't swap in `database/sql` — the ncruces driver uses a different API (`stmt.Step()`, `stmt.BindText()`).
+- **Stats/timing from provider**: Token usage and timing come from the LLM provider's JSON response body (`usage` and `timings` keys), not a local stopwatch. Some providers (llama.cpp) include `timings`; others may only include `usage`.
