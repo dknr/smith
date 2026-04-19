@@ -7,11 +7,9 @@ import (
 
 	"smith/client"
 	"smith/config"
-	"smith/llm"
 	"smith/logging"
 	"smith/server"
 	"smith/session"
-	"smith/tools"
 
 	"github.com/spf13/cobra"
 )
@@ -68,9 +66,7 @@ var serveCmd = &cobra.Command{
 			}
 			defer sess.Close()
 
-			executor := tools.NewRegistry()
-			provider := llm.NewProvider(cfg, executor, protoLogger)
-			return server.Serve(listenAddr, provider, executor, sess, cfg, logger)
+			return server.Serve(listenAddr, cfg, protoLogger, sess, logger)
 		})
 	},
 }

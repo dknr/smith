@@ -31,7 +31,7 @@ var upgrader = websocket.Upgrader{
 // Serve starts a WebSocket server on the given address that processes messages
 // through an LLM agent and sends responses back to the client.
 // It shuts down gracefully on SIGINT or SIGTERM.
-func Serve(addr string, provider llm.Provider, executor *tools.Registry, sess *session.Session, cfg *config.Config, logger *slog.Logger) error {
+func Serve(addr string, cfg *config.Config, protocolLogger *slog.Logger, sess *session.Session, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -40,6 +40,8 @@ func Serve(addr string, provider llm.Provider, executor *tools.Registry, sess *s
 			return
 		}
 		logger.Info("client connected", "remote", conn.RemoteAddr().String())
+
+		executor := tools.NewRegistry()
 
 		memStore, err := memory.New()
 		if err != nil {
@@ -53,6 +55,7 @@ func Serve(addr string, provider llm.Provider, executor *tools.Registry, sess *s
 		executor.RegisterFn("soul", soulTool.Execute, tools.SoulToolDef)
 		executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
 
+		provider := llm.NewProvider(cfg, executor, protocolLogger, executor.Definitions())
 		a := agent.New(provider, executor, sess, logger, memStore)
 
 		for {

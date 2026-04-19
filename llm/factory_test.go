@@ -15,7 +15,7 @@ func TestNewProvider_fields(t *testing.T) {
 	}
 	exec := tools.NewRegistry()
 
-	p := NewProvider(cfg, exec, nil)
+	p := NewProvider(cfg, exec, nil, exec.Definitions())
 	hp, ok := p.(*HTTPProvider)
 	if !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", p)

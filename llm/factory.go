@@ -5,18 +5,22 @@ import (
 
 	"smith/config"
 	"smith/tools"
+	"smith/types"
 )
 
-// NewProvider creates a Provider from the given config and tool definitions.
+// NewProvider creates a Provider from the given config, tool definitions, and tool registry.
 // If protocolLogger is non-nil, full request/response bodies are logged to it.
-func NewProvider(cfg *config.Config, exec tools.Executor, protocolLogger *slog.Logger) Provider {
-	toolsReg := tools.NewRegistry()
+func NewProvider(cfg *config.Config, exec tools.Executor, protoLogger *slog.Logger, defs ...[]types.ToolDef) Provider {
+	var toolDefs []types.ToolDef
+	if len(defs) > 0 {
+		toolDefs = defs[0]
+	}
 	return &HTTPProvider{
 		BaseURL:        cfg.BaseURL,
 		APIKey:         cfg.APIKey,
 		Model:          cfg.Model,
 		SystemPrompt:   cfg.SystemPrompt,
-		Tools:          toolsReg.Definitions(),
-		ProtocolLogger: protocolLogger,
+		Tools:          toolDefs,
+		ProtocolLogger: protoLogger,
 	}
 }
