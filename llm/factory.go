@@ -15,6 +15,7 @@ func NewProvider(cfg *config.Config, exec tools.Executor, protocolLogger *slog.L
 		BaseURL:        cfg.BaseURL,
 		APIKey:         cfg.APIKey,
 		Model:          cfg.Model,
+		SystemPrompt:   cfg.SystemPrompt,
 		Tools:          toolsReg.Definitions(),
 		ProtocolLogger: protocolLogger,
 	}

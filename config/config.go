@@ -10,9 +10,10 @@ import (
 
 // Config holds the LLM provider configuration.
 type Config struct {
-	BaseURL string `toml:"base_url"`
-	APIKey  string `toml:"api_key"`
-	Model   string `toml:"model"`
+	BaseURL      string `toml:"base_url"`
+	APIKey       string `toml:"api_key"`
+	Model        string `toml:"model"`
+	SystemPrompt string `toml:"system_prompt"`
 }
 
 // configName is the name of the config file.

@@ -18,11 +18,12 @@ import (
 
 // HTTPProvider implements Provider by calling an OpenAI-compatible HTTP API.
 type HTTPProvider struct {
-	BaseURL         string
-	APIKey          string
-	Model           string
-	Tools           []types.ToolDef
-	ProtocolLogger  *slog.Logger
+	BaseURL        string
+	APIKey         string
+	Model          string
+	SystemPrompt   string
+	Tools          []types.ToolDef
+	ProtocolLogger *slog.Logger
 }
 
 // defaultTimeout is the HTTP client timeout for provider requests.
@@ -166,9 +167,12 @@ func processSSELine(payload string, ch chan<- string) {
 // Complete sends the conversation to the model and returns a channel of
 // streaming tokens. The channel is closed when the response is complete.
 func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (<-chan string, error) {
-	msgs := make([]msgEntry, len(messages))
-	for i, m := range messages {
-		msgs[i] = msgEntry{Role: m.Role, Content: m.Content}
+	msgs := make([]msgEntry, 0, len(messages)+1)
+	if p.SystemPrompt != "" {
+		msgs = append(msgs, msgEntry{Role: "system", Content: p.SystemPrompt})
+	}
+	for _, m := range messages {
+		msgs = append(msgs, msgEntry{Role: m.Role, Content: m.Content})
 	}
 
 	body := chatRequest{
@@ -233,8 +237,11 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 // Call sends the conversation to the model (with optional tools) and returns
 // a structured result containing either text content or tool calls.
 func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools []types.ToolDef) (CallResult, error) {
-	msgs := make([]msgEntry, len(messages))
-	for i, m := range messages {
+	msgs := make([]msgEntry, 0, len(messages)+1)
+	if p.SystemPrompt != "" {
+		msgs = append(msgs, msgEntry{Role: "system", Content: p.SystemPrompt})
+	}
+	for _, m := range messages {
 		me := msgEntry{
 			Role:    m.Role,
 			Content: m.Content,
@@ -243,7 +250,7 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 		for _, tc := range m.ToolCalls {
 			me.ToolCalls = append(me.ToolCalls, msgToOpenAI(tc))
 		}
-		msgs[i] = me
+		msgs = append(msgs, me)
 	}
 
 	body := chatRequest{
