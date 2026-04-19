@@ -40,6 +40,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		return false, fmt.Errorf("failed to send sync request: %w", err)
 	}
+	logger.Debug("sent sync request")
 
 	var bufferedKickoff []*types.Response
 	var hasHistory bool
@@ -54,6 +55,8 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 		if err != nil {
 			return false, fmt.Errorf("failed to parse sync response: %w", err)
 		}
+
+		logger.Debug("sync response received", "role", r.Role, "done", r.Done, "syncComplete", r.SyncComplete)
 
 		if r.SyncComplete {
 			logger.Debug("session synced")
@@ -98,6 +101,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 		if r.Role == "new_session" {
 			printNewSession()
 			isNew = true
+			logger.Debug("new session detected")
 			continue
 		}
 		if r.Role == "tool_call" || r.Role == "assistant" || r.Role == "error" {
@@ -162,6 +166,8 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
+		logger.Debug("received message", "role", r.Role, "done", r.Done, "id", r.ID)
+
 		// Delegate non-assistant roles to renderResponse.
 		if r.Role != "assistant" {
 			renderResponse(r, colorize)
@@ -173,7 +179,6 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 			fmt.Print(r.Content[len(lastContent):])
 		}
 		lastContent = r.Content
-		logger.Debug("received response", "id", r.ID, "done", r.Done, "data", r.Content)
 
 		if r.Done {
 			fmt.Println()
@@ -194,6 +199,8 @@ func Send(addr, message string, logger *slog.Logger, colorize bool) error {
 	}
 	defer conn.Close()
 
+	logger.Debug("connected to server", "addr", addr)
+
 	req := types.Request{
 		ID:      "1",
 		Role:    "user",
@@ -207,6 +214,7 @@ func Send(addr, message string, logger *slog.Logger, colorize bool) error {
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
+	logger.Debug("sent message", "id", req.ID, "content", req.Content)
 
 	return readLoop(conn, logger, colorize)
 }
@@ -220,6 +228,8 @@ func Chat(addr string, logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
+	logger.Debug("connected to server", "addr", addr)
+
 	if _, err := syncSession(conn, logger, true); err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
@@ -231,10 +241,12 @@ func Chat(addr string, logger *slog.Logger) error {
 		fmt.Print("> ")
 		if !scanner.Scan() {
 			fmt.Println()
+			logger.Debug("input stream ended, exiting")
 			break
 		}
 		input := scanner.Text()
 		if strings.TrimSpace(input) == "/quit" {
+			logger.Debug("quit command received, exiting")
 			break
 		}
 		if strings.TrimSpace(input) == "" {
@@ -255,8 +267,10 @@ func Chat(addr string, logger *slog.Logger) error {
 
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			logger.Error("failed to send message", "error", err)
 			break
 		}
+		logger.Debug("sent message", "id", req.ID, "content", req.Content)
 
 		if err := readLoop(conn, logger, true); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)

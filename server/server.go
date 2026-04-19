@@ -37,7 +37,7 @@ var (
 // Serve starts a WebSocket server on the given address that processes messages
 // through an LLM agent and sends responses back to the client.
 // It shuts down gracefully on SIGINT or SIGTERM.
-func Serve(addr string, cfg *config.Config, protocolLogger *slog.Logger, sess *session.Session, memStore *memory.Store, logger *slog.Logger) error {
+func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *session.Session, memStore *memory.Store, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Single-session: reject if a connection is already active.
@@ -65,7 +65,7 @@ func Serve(addr string, cfg *config.Config, protocolLogger *slog.Logger, sess *s
 		executor.RegisterFn("soul", soulTool.Execute, tools.SoulToolDef)
 		executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
 
-		provider := llm.NewProvider(cfg, executor, protocolLogger, executor.Definitions())
+		provider := llm.NewProvider(cfg, executor, debugLogger, executor.Definitions())
 		a := agent.New(provider, executor, sess, logger, memStore)
 
 		for {

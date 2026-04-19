@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,33 +17,28 @@ import (
 
 // HTTPProvider implements Provider by calling an OpenAI-compatible HTTP API.
 type HTTPProvider struct {
-	BaseURL        string
-	APIKey         string
-	Model          string
-	SystemPrompt   string
-	Tools          []types.ToolDef
-	ProtocolLogger *slog.Logger
+	BaseURL     string
+	APIKey      string
+	Model       string
+	SystemPrompt string
+	Tools       []types.ToolDef
+	DebugLogger *slog.Logger
 }
 
 // defaultTimeout is the HTTP client timeout for provider requests.
 const defaultTimeout = 60 * time.Second
 
-// logProtocol writes a request/response pair to the protocol logger.
-func (p *HTTPProvider) logProtocol(ctx context.Context, method, url string, reqBody, respBody interface{}) {
-	if p.ProtocolLogger == nil {
+// logDebug writes a request/response pair to the debug logger.
+func (p *HTTPProvider) logDebug(ctx context.Context, method, url string, reqBody, respBody interface{}) {
+	if p.DebugLogger == nil {
 		return
 	}
-	id := make([]byte, 6)
-	_, _ = rand.Read(id)
-	reqJSON, _ := json.MarshalIndent(reqBody, "", "  ")
-	respJSON, _ := json.MarshalIndent(respBody, "", "  ")
-	p.ProtocolLogger.InfoContext(ctx, "",
-		"ts", time.Now().UTC().Format(time.RFC3339),
-		"request", fmt.Sprintf("REQUEST %x", id),
+	reqJSON, _ := json.Marshal(reqBody)
+	respJSON, _ := json.Marshal(respBody)
+	p.DebugLogger.DebugContext(ctx, "provider request/response",
 		"method", method,
 		"url", url,
 		"request_body", string(reqJSON),
-		"response", fmt.Sprintf("RESPONSE %x", id),
 		"response_body", string(respJSON),
 	)
 }
@@ -221,7 +215,7 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 			if strings.HasPrefix(line, "data: ") {
 				payload := strings.TrimPrefix(line, "data: ")
 				if payload == "[DONE]" {
-					p.logProtocol(ctx, http.MethodPost, url, body, fullResponse.String())
+					p.logDebug(ctx, http.MethodPost, url, body, fullResponse.String())
 					return
 				}
 				processSSELine(payload, ch)
@@ -303,7 +297,7 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 		toolCalls = append(toolCalls, tc.toToolCall())
 	}
 
-	p.logProtocol(ctx, http.MethodPost, url, body, result)
+	p.logDebug(ctx, http.MethodPost, url, body, result)
 
 	var usage *Usage
 	if result.Usage.PromptTokens != nil || result.Usage.CompletionTokens != nil {
