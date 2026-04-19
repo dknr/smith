@@ -42,14 +42,17 @@ type Request struct {
 	ID      string `json:"id"`
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	Sync    bool   `json:"sync"`
 }
 
 // Response represents a message from the server to the client.
 type Response struct {
-	ID      string `json:"id"`
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Done    bool   `json:"done"`
+	ID           string     `json:"id"`
+	Role         string     `json:"role"`
+	Content      string     `json:"content"`
+	Done         bool       `json:"done"`
+	History      []Message  `json:"history,omitempty"`
+	SyncComplete bool       `json:"sync_complete,omitempty"`
 }
 
 // MarshalRequest encodes a Request as JSON bytes.

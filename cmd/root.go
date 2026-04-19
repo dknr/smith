@@ -10,6 +10,7 @@ import (
 	"smith/llm"
 	"smith/logging"
 	"smith/server"
+	"smith/session"
 	"smith/tools"
 
 	"github.com/spf13/cobra"
@@ -47,9 +48,16 @@ var serveCmd = &cobra.Command{
 				return err
 			}
 
+			sess, err := session.New()
+			if err != nil {
+				logger.Error("session error", "error", err)
+				return err
+			}
+			defer sess.Close()
+
 			executor := tools.NewRegistry()
 			provider := llm.NewProvider(cfg, executor)
-			return server.Serve(listenAddr, provider, executor, logger)
+			return server.Serve(listenAddr, provider, executor, sess, logger)
 		})
 	},
 }

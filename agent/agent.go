@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"smith/llm"
+	"smith/session"
 	"smith/tools"
 	"smith/types"
 )
@@ -20,15 +21,23 @@ type Agent struct {
 	provider llm.Provider
 	executor *tools.Registry
 	logger   *slog.Logger
+	session  *session.Session
 }
 
-// New creates a new Agent with the given Provider and tool Registry.
-func New(provider llm.Provider, executor *tools.Registry, logger *slog.Logger) *Agent {
-	return &Agent{
+// New creates a new Agent with the given Provider, tool Registry, session, and logger.
+func New(provider llm.Provider, executor *tools.Registry, sess *session.Session, logger *slog.Logger) *Agent {
+	a := &Agent{
 		provider: provider,
 		executor: executor,
 		logger:   logger,
+		session:  sess,
 	}
+	if sess != nil {
+		if history, err := sess.LoadHistory(); err == nil {
+			a.history = history
+		}
+	}
+	return a
 }
 
 // ProcessMessage appends a user message to history, sends it to the provider
@@ -43,6 +52,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 	respCh := make(chan *types.Response, 10)
 	go func() {
 		defer close(respCh)
+
+		startLen := len(a.history)
 
 		// Loop: call provider, handle tool calls or stream text.
 		for {
@@ -63,6 +74,15 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 
 			// Text response — stream it.
 			a.streamText(ctx, result.Text, respCh)
+
+			// Save all new messages to the session.
+			if a.session != nil {
+				a.mu.Lock()
+				if err := a.session.Append(a.history[startLen:]...); err != nil {
+					a.logger.Error("failed to save session", "error", err)
+				}
+				a.mu.Unlock()
+			}
 			return
 		}
 	}()

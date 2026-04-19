@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"smith/llm"
+	"smith/session"
 	"smith/tools"
 	"smith/types"
 
@@ -51,15 +52,17 @@ func (f *fakeProvider) Call(ctx context.Context, messages []types.Message, toolD
 func newFakeAgent(callText string, callTools []types.ToolCall) *Agent {
 	fp := &fakeProvider{callText: callText, callTools: callTools}
 	reg := tools.NewRegistry()
+	sess, _ := session.New()
 	logger := slog.Default()
-	return New(fp, reg, logger)
+	return New(fp, reg, sess, logger)
 }
 
 func newFakeAgentWithErr(callErr error) *Agent {
 	fp := &fakeProvider{callErr: callErr}
 	reg := tools.NewRegistry()
+	sess, _ := session.New()
 	logger := slog.Default()
-	return New(fp, reg, logger)
+	return New(fp, reg, sess, logger)
 }
 
 func TestHistory_empty(t *testing.T) {
@@ -175,7 +178,7 @@ func TestProcessMessage_contextCancel(t *testing.T) {
 		cancel()
 	}()
 
-	a := New(blocking, tools.NewRegistry(), slog.Default())
+	a := New(blocking, tools.NewRegistry(), nil, slog.Default())
 	respCh, err := a.ProcessMessage(ctx, "hi")
 	if err != nil {
 		t.Fatalf("ProcessMessage: %v", err)
@@ -276,12 +279,16 @@ func TestHistory_toolCallWithFileView(t *testing.T) {
 func TestNew_providerStored(t *testing.T) {
 	fp := &fakeProvider{callText: "test"}
 	reg := tools.NewRegistry()
-	a := New(fp, reg, slog.Default())
+	sess, _ := session.New()
+	a := New(fp, reg, sess, slog.Default())
 	if a.provider != fp {
 		t.Error("provider not stored correctly")
 	}
 	if a.executor == nil {
 		t.Error("executor not stored correctly")
+	}
+	if a.session == nil {
+		t.Error("session not stored correctly")
 	}
 }
 

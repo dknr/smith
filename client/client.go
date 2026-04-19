@@ -21,6 +21,55 @@ func dial(addr string) (*websocket.Conn, error) {
 	return conn, err
 }
 
+// syncSession connects to the server and requests a session sync.
+// It prints history messages and verifies sync complete.
+func syncSession(conn *websocket.Conn, logger *slog.Logger) error {
+	req := types.Request{
+		ID:   "0",
+		Role: "user",
+		Sync: true,
+	}
+	data, err := types.MarshalRequest(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sync request: %w", err)
+	}
+
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		return fmt.Errorf("failed to send sync request: %w", err)
+	}
+
+	for {
+		_, resp, err := conn.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("failed to read sync response: %w", err)
+		}
+
+		r, err := types.UnmarshalResponse(resp)
+		if err != nil {
+			return fmt.Errorf("failed to parse sync response: %w", err)
+		}
+
+		if r.SyncComplete {
+			logger.Debug("session synced")
+			return nil
+		}
+
+		// Print history messages.
+		for _, m := range r.History {
+			switch m.Role {
+			case "user":
+				fmt.Printf("> %s\n", m.Content)
+			case "tool_call":
+				fmt.Println(m.Content)
+			case "tool":
+				fmt.Println(m.Content)
+			case "assistant":
+				fmt.Println(m.Content)
+			}
+		}
+	}
+}
+
 // readLoop reads streaming responses from the server, printing deltas as they arrive.
 // Returns on error or when done=true is received.
 func readLoop(conn *websocket.Conn, logger *slog.Logger) error {
@@ -88,6 +137,10 @@ func Chat(addr string, logger *slog.Logger) error {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
 	defer conn.Close()
+
+	if err := syncSession(conn, logger); err != nil {
+		return fmt.Errorf("sync failed: %w", err)
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	msgID := 0
