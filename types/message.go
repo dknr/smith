@@ -1,6 +1,10 @@
 package types
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 // Message represents a single message in a conversation.
 type Message struct {
@@ -51,7 +55,7 @@ type Response struct {
 	Role         string          `json:"role"`
 	Content      string          `json:"content"`
 	Done         bool            `json:"done"`
-	History      []Message       `json:"history,omitempty"`
+	History      []Message       `json:"history,omitempty"` // Deprecated: use inline Response objects instead.
 	SyncComplete bool            `json:"sync_complete,omitempty"`
 	Kickoff      string          `json:"kickoff,omitempty"`
 	Usage        *ResponseUsage  `json:"usage,omitempty"`
@@ -99,4 +103,38 @@ func UnmarshalResponse(data []byte) (*Response, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+// FormatToolCall formats a tool call as "name(key='value', ...)" for display.
+func FormatToolCall(name, argsJSON string) string {
+	if argsJSON == "" || argsJSON == "{}" {
+		return fmt.Sprintf("%s()", name)
+	}
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return fmt.Sprintf("%s(%s)", name, argsJSON)
+	}
+	parts := make([]string, 0, len(args))
+	for k, v := range args {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, formatArg(v)))
+	}
+	return fmt.Sprintf("%s(%s)", name, strings.Join(parts, ", "))
+}
+
+func formatArg(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", val)
+	case bool:
+		return fmt.Sprintf("%t", val)
+	case float64:
+		if val == float64(int64(val)) {
+			return fmt.Sprintf("%d", int64(val))
+		}
+		return fmt.Sprintf("%g", val)
+	case nil:
+		return "null"
+	default:
+		return fmt.Sprintf("%v", val)
+	}
 }

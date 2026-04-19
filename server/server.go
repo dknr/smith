@@ -165,22 +165,43 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger *slog.L
 		return
 	}
 
-	// Send history messages.
-	if len(history) > 0 {
+	// Convert history messages to Response objects and stream them.
+	for _, m := range history {
+		if len(m.ToolCalls) > 0 {
+			// Tool call from assistant — emit one Response per tool call.
+			for _, tc := range m.ToolCalls {
+				resp := types.Response{
+					ID:      id,
+					Role:    "tool_call",
+					Content: types.FormatToolCall(tc.Name, tc.Arguments),
+					Done:    false,
+				}
+				data, err := types.MarshalResponse(resp)
+				if err != nil {
+					logger.Error("failed to marshal tool call response", "error", err)
+					return
+				}
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					logger.Error("failed to write tool call response", "error", err)
+					return
+				}
+			}
+			continue
+		}
+		// Regular message (user, tool, assistant text, error).
 		resp := types.Response{
 			ID:      id,
-			Role:    "sync",
-			Content: "",
+			Role:    m.Role,
+			Content: m.Content,
 			Done:    false,
-			History: history,
 		}
 		data, err := types.MarshalResponse(resp)
 		if err != nil {
-			logger.Error("failed to marshal history", "error", err)
+			logger.Error("failed to marshal history response", "error", err)
 			return
 		}
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			logger.Error("failed to write history", "error", err)
+			logger.Error("failed to write history response", "error", err)
 			return
 		}
 	}

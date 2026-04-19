@@ -317,39 +317,39 @@ func TestProcessMessage_toolCallResponse(t *testing.T) {
 }
 
 func TestFormatToolCall_noArgs(t *testing.T) {
-	got := formatToolCall("time", "{}")
+	got := types.FormatToolCall("time", "{}")
 	if got != "time()" {
-		t.Errorf("formatToolCall(time, '{}') = %q, want %q", got, "time()")
+		t.Errorf("types.FormatToolCall(time, '{}') = %q, want %q", got, "time()")
 	}
 }
 
 func TestFormatToolCall_noArgsEmpty(t *testing.T) {
-	got := formatToolCall("time", "")
+	got := types.FormatToolCall("time", "")
 	if got != "time()" {
-		t.Errorf("formatToolCall(time, '') = %q, want %q", got, "time()")
+		t.Errorf("types.FormatToolCall(time, '') = %q, want %q", got, "time()")
 	}
 }
 
 func TestFormatToolCall_withArgs(t *testing.T) {
-	got := formatToolCall("view", `{"path":"foo/output.txt"}`)
+	got := types.FormatToolCall("view", `{"path":"foo/output.txt"}`)
 	want := `view(path="foo/output.txt")`
 	if got != want {
-		t.Errorf("formatToolCall(view, ...) = %q, want %q", got, want)
+		t.Errorf("types.FormatToolCall(view, ...) = %q, want %q", got, want)
 	}
 }
 
 func TestFormatToolCall_multipleArgs(t *testing.T) {
-	got := formatToolCall("list", `{"path":"foo/bar","all":false}`)
+	got := types.FormatToolCall("list", `{"path":"foo/bar","all":false}`)
 	want := `list(path="foo/bar", all=false)`
 	if got != want && got != `list(all=false, path="foo/bar")` {
-		t.Errorf("formatToolCall(list, ...) = %q, want %q", got, want)
+		t.Errorf("types.FormatToolCall(list, ...) = %q, want %q", got, want)
 	}
 }
 
 func TestFormatToolCall_invalidJSON(t *testing.T) {
-	got := formatToolCall("view", "not json")
+	got := types.FormatToolCall("view", "not json")
 	if got != "view(not json)" {
-		t.Errorf("formatToolCall with invalid JSON should fall back to raw string, got %q", got)
+		t.Errorf("types.FormatToolCall with invalid JSON should fall back to raw string, got %q", got)
 	}
 }
 
