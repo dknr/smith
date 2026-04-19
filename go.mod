@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/Shopify/go-lua v0.0.0-20250718183320-1e37f32ad7d0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/ncruces/go-sqlite3 v0.33.3 // indirect

@@ -19,6 +19,7 @@ import (
 var (
 	listenAddr   string
 	logProtocol  bool
+	verbose      bool
 	version      = "dev"
 )
 
@@ -80,7 +81,7 @@ var sendCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		runWithLogger("smith", func(logger *slog.Logger) error {
-			return client.Send(listenAddr, args[0], logger)
+			return client.Send(listenAddr, args[0], logger, verbose)
 		})
 	},
 }
@@ -109,4 +110,5 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVarP(&listenAddr, "addr", "a", "localhost:26856", "server address")
 	serveCmd.Flags().BoolVar(&logProtocol, "log-protocol", false, "log protocol traffic to smith-protocol.log")
+	sendCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show tool calls and stats in send mode")
 }

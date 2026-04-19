@@ -60,6 +60,46 @@ go test ./package/... -v -run TestName     # Verbose
 - Always close session in tests: `defer sess.Close()`.
 - Test helper `newFakeAgent(callText, callTools)` and `newFakeAgentWithErr(err)` are available.
 
+## Autonomous Integration Testing
+
+After unit tests pass, test end-to-end with a real LLM provider:
+
+1. **Kill any existing server and clear state:**
+   ```bash
+   kill $(lsof -ti:26856) 2>/dev/null; sleep 1; rm -f smith-protocol.log
+   ```
+
+2. **Build and start a fresh server with protocol logging:**
+   ```bash
+   go build . && ./smith serve --log-protocol &
+   sleep 2
+   ```
+
+3. **Run test messages with `--verbose` to see tool calls:**
+   ```bash
+   ./smith send "<message>" --verbose 2>&1
+   ```
+   - Yellow `[33m` output = tool calls
+   - Grey `[90m` output = stats line
+   - Red `[31m` output = errors
+
+4. **Check for loops:** A healthy tool call completes on the first attempt. If you see the same tool called 3+ times with different arguments, the LLM is stuck. This usually means:
+   - The tool's output doesn't match what the LLM expected
+   - A Lua library is missing (e.g., `string` library not loaded)
+   - History is polluted with prior failed attempts
+
+5. **When loops occur, inspect the protocol log:**
+   ```bash
+   cat smith-protocol.log | jq -r 'select(.request_body and .response_body) | "TOOL: \(.request_body | fromjson | .messages[] | select(.tool_calls) | .tool_calls[0].function.name) → \(.response_body | fromjson | .choices[0].message.tool_calls[0].function.name // "text")"'
+   ```
+
+6. **Kill the server when done:**
+   ```bash
+   kill $(lsof -ti:26856) 2>/dev/null
+   ```
+
+**Tip:** Always start with a fresh server. Session history from prior runs can cause the LLM to loop on tools it previously failed with.
+
 ## Gotchas
 
 - **Tool call loop**: The agent loops on tool calls until the provider returns text. Each tool call appends to history, executes the tool, appends the result, then calls the provider again.

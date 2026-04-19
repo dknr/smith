@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,8 +14,8 @@ import (
 func TestRegistry_Definitions(t *testing.T) {
 	r := NewRegistry()
 	defs := r.Definitions()
-	if len(defs) != 3 {
-		t.Fatalf("expected 3 tool definitions, got %d", len(defs))
+	if len(defs) != 4 {
+		t.Fatalf("expected 4 tool definitions, got %d", len(defs))
 	}
 
 	names := make(map[string]bool)
@@ -23,7 +25,7 @@ func TestRegistry_Definitions(t *testing.T) {
 			t.Errorf("tool %s has empty description", d.Name)
 		}
 	}
-	for _, want := range []string{"time", "list", "view"} {
+	for _, want := range []string{"time", "list", "view", "lua"} {
 		if !names[want] {
 			t.Errorf("missing tool definition: %s", want)
 		}
@@ -151,5 +153,79 @@ func TestExecute_view_invalidJSON(t *testing.T) {
 	_, err := r.Execute(context.Background(), "view", "not json")
 	if err == nil {
 		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestExecute_lua_basic(t *testing.T) {
+	r := NewRegistry()
+	result, err := r.Execute(context.Background(), "lua", `{"code":"smith.print('hello')"}`)
+	if err != nil {
+		t.Fatalf("lua: %v", err)
+	}
+	if result != "hello" {
+		t.Errorf("result = %q, want %q", result, "hello")
+	}
+}
+
+func TestExecute_lua_math(t *testing.T) {
+	r := NewRegistry()
+	result, err := r.Execute(context.Background(), "lua", `{"code":"smith.print(2 + 3)"}`)
+	if err != nil {
+		t.Fatalf("lua: %v", err)
+	}
+	if result != "5" {
+		t.Errorf("result = %q, want %q", result, "5")
+	}
+}
+
+func TestExecute_lua_missingCode(t *testing.T) {
+	r := NewRegistry()
+	_, err := r.Execute(context.Background(), "lua", `{}`)
+	if err == nil {
+		t.Error("expected error for missing code")
+	}
+}
+
+func TestExecute_lua_invalidSyntax(t *testing.T) {
+	r := NewRegistry()
+	_, err := r.Execute(context.Background(), "lua", `{"code":"print("}`)
+	if err == nil {
+		t.Error("expected error for invalid syntax")
+	}
+	if !strings.Contains(err.Error(), "compile error") {
+		t.Errorf("error should mention compile error: %v", err)
+	}
+}
+
+func TestExecute_lua_view(t *testing.T) {
+	r := NewRegistry()
+	tmp := t.TempDir()
+	testFile := filepath.Join(tmp, "test.txt")
+	if err := os.WriteFile(testFile, []byte("world"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	code := `local c=smith.view("` + testFile + `");smith.print(c)`
+	args, err := json.Marshal(map[string]string{"code": code})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := r.Execute(context.Background(), "lua", string(args))
+	if err != nil {
+		t.Fatalf("lua view: %v", err)
+	}
+	if result != "world" {
+		t.Errorf("result = %q, want %q", result, "world")
+	}
+}
+
+func TestExecute_lua_list(t *testing.T) {
+	r := NewRegistry()
+	result, err := r.Execute(context.Background(), "lua", `{"code":"local t=smith.list();smith.print(#t)"}`)
+	if err != nil {
+		t.Fatalf("lua list: %v", err)
+	}
+	n, _ := strconv.Atoi(result)
+	if n < 1 {
+		t.Errorf("list returned count %d, expected >= 1", n)
 	}
 }

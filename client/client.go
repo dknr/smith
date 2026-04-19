@@ -151,7 +151,8 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 }
 
 // Send connects to the server, sends a message, prints all responses until done, then exits.
-func Send(addr, message string, logger *slog.Logger) error {
+// If colorize is true, tool calls are shown in yellow, errors in red, and stats are printed.
+func Send(addr, message string, logger *slog.Logger, colorize bool) error {
 	conn, err := dial(addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
@@ -172,7 +173,7 @@ func Send(addr, message string, logger *slog.Logger) error {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
-	return readLoop(conn, logger, false)
+	return readLoop(conn, logger, colorize)
 }
 
 // Chat starts an interactive session with the server.

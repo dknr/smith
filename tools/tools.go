@@ -47,6 +47,7 @@ func NewRegistry() *Registry {
 	r.register("time", toolTime)
 	r.register("list", toolList)
 	r.register("view", toolView)
+	r.register("lua", toolLua)
 	return r
 }
 
@@ -100,6 +101,20 @@ var toolDefs = map[string]types.ToolDef{
 				},
 			},
 			"required": []string{"path"},
+		},
+	},
+	"lua": {
+		Name:        "lua",
+		Description: "Execute a Lua script in a sandboxed environment. Exposes string operations and smith.view(path), smith.list(path), smith.write(path, content), and smith.print(...) for file operations and output.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"code": map[string]interface{}{
+					"type":        "string",
+					"description": "Lua script to execute",
+				},
+			},
+			"required": []string{"code"},
 		},
 	},
 }
