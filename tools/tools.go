@@ -75,8 +75,11 @@ func (r *Registry) register(name string, fn toolFunc) {
 
 // RegisterFn registers a stateful tool function and its definition.
 func (r *Registry) RegisterFn(name string, fn toolFunc, def types.ToolDef) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.tools[name] = fn
 	r.defMap[name] = def
+	r.defs = append(r.defs, def)
 }
 
 // toolDefs holds the JSON schema definitions for built-in tools.
