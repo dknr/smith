@@ -165,7 +165,7 @@ func TestProcessMessage_providerError(t *testing.T) {
 	if !responses[0].Done {
 		t.Error("expected done=true for error response")
 	}
-	if !strings.Contains(responses[0].Content, "Error") {
+	if !strings.Contains(responses[0].Content, "context canceled") {
 		t.Errorf("expected error content, got %q", responses[0].Content)
 	}
 }
@@ -369,7 +369,7 @@ func TestProcessMessage_errorResponse(t *testing.T) {
 	if !responses[0].Done {
 		t.Error("expected done=true for error response")
 	}
-	if responses[0].Role != "assistant" {
-		t.Errorf("expected role=assistant, got %q", responses[0].Role)
+	if responses[0].Role != "error" {
+		t.Errorf("expected role=error, got %q", responses[0].Role)
 	}
 }

@@ -60,8 +60,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 			result, err := a.provider.Call(ctx, a.history, a.executor.Definitions())
 			if err != nil {
 				respCh <- &types.Response{
-					Role:    "assistant",
-					Content: fmt.Sprintf("Error: %v", err),
+					Role:    "error",
+					Content: err.Error(),
 					Done:    true,
 				}
 				return

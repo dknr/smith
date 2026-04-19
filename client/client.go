@@ -23,7 +23,8 @@ func dial(addr string) (*websocket.Conn, error) {
 
 // syncSession connects to the server and requests a session sync.
 // It prints history messages and verifies sync complete.
-func syncSession(conn *websocket.Conn, logger *slog.Logger) error {
+// If colorize is true, tool calls are shown in yellow and errors in red.
+func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 	req := types.Request{
 		ID:   "0",
 		Role: "user",
@@ -56,23 +57,41 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger) error {
 
 		// Print history messages.
 		for _, m := range r.History {
+			if len(m.ToolCalls) > 0 {
+				// Tool call messages are stored with Role=assistant but ToolCalls populated.
+				for _, tc := range m.ToolCalls {
+					if colorize {
+						fmt.Printf("\033[33m%s(%s)\033[0m\n", tc.Name, tc.Arguments)
+					}
+				}
+				continue
+			}
 			switch m.Role {
 			case "user":
 				fmt.Printf("> %s\n", m.Content)
 			case "tool_call":
-				fmt.Println(m.Content)
+				if colorize {
+					fmt.Printf("\033[33m%s\033[0m\n", m.Content)
+				}
 			case "tool":
 				fmt.Println(m.Content)
 			case "assistant":
 				fmt.Println(m.Content)
+			case "error":
+				if colorize {
+					fmt.Printf("\033[31mError: %s\033[0m\n", m.Content)
+				} else {
+					fmt.Fprintf(os.Stderr, "error: %s\n", m.Content)
+				}
 			}
 		}
 	}
 }
 
 // readLoop reads streaming responses from the server, printing deltas as they arrive.
+// If colorize is true, tool calls are shown in yellow and errors in red.
 // Returns on error or when done=true is received.
-func readLoop(conn *websocket.Conn, logger *slog.Logger) error {
+func readLoop(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 	var lastContent string
 	for {
 		_, resp, err := conn.ReadMessage()
@@ -87,8 +106,20 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger) error {
 
 		// Tool call notifications are printed as-is, not as deltas.
 		if r.Role == "tool_call" {
-			fmt.Println(r.Content)
+			if colorize {
+				fmt.Printf("\033[33m%s\033[0m\n", r.Content)
+			}
 			continue
+		}
+
+		if r.Role == "error" {
+			if colorize {
+				fmt.Printf("\033[31mError: %s\033[0m\n", r.Content)
+			} else {
+				fmt.Fprintf(os.Stderr, "error: %s\n", r.Content)
+			}
+			fmt.Println()
+			return nil
 		}
 
 		if len(r.Content) > len(lastContent) {
@@ -126,7 +157,7 @@ func Send(addr, message string, logger *slog.Logger) error {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
-	return readLoop(conn, logger)
+	return readLoop(conn, logger, false)
 }
 
 // Chat starts an interactive session with the server.
@@ -138,7 +169,7 @@ func Chat(addr string, logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	if err := syncSession(conn, logger); err != nil {
+	if err := syncSession(conn, logger, true); err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
@@ -176,7 +207,7 @@ func Chat(addr string, logger *slog.Logger) error {
 			break
 		}
 
-		if err := readLoop(conn, logger); err != nil {
+		if err := readLoop(conn, logger, true); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			break
 		}
