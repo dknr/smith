@@ -43,6 +43,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 
 	var bufferedKickoff []*types.Response
 	var hasHistory bool
+	var isNew bool
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
@@ -56,9 +57,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 
 		if r.SyncComplete {
 			logger.Debug("session synced")
-			isNew := len(bufferedKickoff) > 0 && colorize
-			if isNew {
-				printNewSession()
+			if isNew && colorize {
 				if r.Kickoff != "" {
 					fmt.Printf("\033[90m  %s\033[0m\n", r.Kickoff)
 				}
@@ -96,6 +95,11 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 		}
 
 		// For new sessions, buffer kickoff streaming responses.
+		if r.Role == "new_session" {
+			printNewSession()
+			isNew = true
+			continue
+		}
 		if r.Role == "tool_call" || r.Role == "assistant" || r.Role == "error" {
 			bufferedKickoff = append(bufferedKickoff, r)
 		}

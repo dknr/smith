@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,17 +29,33 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+var (
+	activeConn    *websocket.Conn
+	activeConnMu  sync.Mutex
+)
+
 // Serve starts a WebSocket server on the given address that processes messages
 // through an LLM agent and sends responses back to the client.
 // It shuts down gracefully on SIGINT or SIGTERM.
 func Serve(addr string, cfg *config.Config, protocolLogger *slog.Logger, sess *session.Session, memStore *memory.Store, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Single-session: reject if a connection is already active.
+		activeConnMu.Lock()
+		if activeConn != nil {
+			activeConnMu.Unlock()
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			activeConnMu.Unlock()
 			logger.Error("websocket upgrade failed", "error", err)
 			return
 		}
+		activeConn = conn
+		activeConnMu.Unlock()
+
 		logger.Info("client connected", "remote", conn.RemoteAddr().String())
 
 		executor := tools.NewRegistry()
@@ -94,6 +111,11 @@ func Serve(addr string, cfg *config.Config, protocolLogger *slog.Logger, sess *s
 		}
 
 		conn.Close()
+
+		// Release the session lock on disconnect.
+		activeConnMu.Lock()
+		activeConn = nil
+		activeConnMu.Unlock()
 	})
 
 	srv := &http.Server{
@@ -123,6 +145,22 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger *slog.L
 
 	// If new session with kickoff, process it through the agent.
 	if len(history) == 0 && kickoff != "" {
+		// Send banner immediately so the client doesn't stall.
+		banner := types.Response{
+			ID:   id,
+			Role: "new_session",
+			Done: true,
+		}
+		data, err := types.MarshalResponse(banner)
+		if err != nil {
+			logger.Error("failed to marshal new session banner", "error", err)
+			return
+		}
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			logger.Error("failed to write new session banner", "error", err)
+			return
+		}
+
 		respCh, err := a.ProcessMessage(context.Background(), kickoff)
 		if err != nil {
 			logger.Error("kickoff error", "error", err)
@@ -152,7 +190,7 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger *slog.L
 			SyncComplete: true,
 			Kickoff:      kickoff,
 		}
-		data, err := types.MarshalResponse(resp)
+		data, err = types.MarshalResponse(resp)
 		if err != nil {
 			logger.Error("failed to marshal sync complete", "error", err)
 			return
