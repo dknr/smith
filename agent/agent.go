@@ -48,15 +48,14 @@ func New(provider llm.Provider, executor *tools.Registry, sess *session.Session,
 // calls until the provider returns text content. Intermediate streaming
 // responses have done=false, the final response has done=true.
 func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *types.Response, error) {
-	a.mu.Lock()
-	a.history = append(a.history, types.Message{Role: "user", Content: content})
-	a.mu.Unlock()
-
 	respCh := make(chan *types.Response, 10)
 	go func() {
 		defer close(respCh)
 
 		startLen := len(a.history)
+		a.mu.Lock()
+		a.history = append(a.history, types.Message{Role: "user", Content: content})
+		a.mu.Unlock()
 
 		// Loop: call provider, handle tool calls or stream text.
 		for {
