@@ -26,7 +26,7 @@ func dial(addr string) (*websocket.Conn, error) {
 // It prints history messages and verifies sync complete.
 // If colorize is true, tool calls are shown in yellow and errors in red.
 // Returns whether the session was new (no prior history).
-func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
+func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool, error) {
 	req := types.Request{
 		ID:   "0",
 		Role: "user",
@@ -34,31 +34,62 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error
 	}
 	data, err := types.MarshalRequest(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal sync request: %w", err)
+		return false, fmt.Errorf("failed to marshal sync request: %w", err)
 	}
 
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		return fmt.Errorf("failed to send sync request: %w", err)
+		return false, fmt.Errorf("failed to send sync request: %w", err)
 	}
 
 	msgCount := 0
+	var lastContent string
+	var bufferedKickoff []*types.Response
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
-			return fmt.Errorf("failed to read sync response: %w", err)
+			return false, fmt.Errorf("failed to read sync response: %w", err)
 		}
 
 		r, err := types.UnmarshalResponse(resp)
 		if err != nil {
-			return fmt.Errorf("failed to parse sync response: %w", err)
+			return false, fmt.Errorf("failed to parse sync response: %w", err)
 		}
 
 		if r.SyncComplete {
 			logger.Debug("session synced")
-			if msgCount == 0 && colorize {
+			isNew := msgCount == 0 && colorize
+			if isNew {
 				printNewSession()
+				if r.Kickoff != "" {
+					fmt.Printf("\033[90m  %s\033[0m\n", r.Kickoff)
+				}
+				// Replay buffered kickoff responses.
+				for _, br := range bufferedKickoff {
+					if br.Role == "tool_call" {
+						if colorize {
+							fmt.Printf("\033[33m%s\033[0m\n", br.Content)
+						}
+					} else if br.Role == "error" {
+						if colorize {
+							fmt.Printf("\033[31mError: %s\033[0m\n", br.Content)
+						} else {
+							fmt.Fprintf(os.Stderr, "error: %s\n", br.Content)
+						}
+					} else if br.Role == "assistant" && br.Content != "" {
+						if len(br.Content) > len(lastContent) {
+							fmt.Print(br.Content[len(lastContent):])
+						}
+						lastContent = br.Content
+						if br.Done {
+							fmt.Println()
+							if colorize && (br.Usage != nil || br.Timing != nil) {
+								printStatsLine(br.Usage, br.Timing)
+							}
+						}
+					}
+				}
 			}
-			return nil
+			return isNew, nil
 		}
 
 		// Print history messages.
@@ -91,6 +122,11 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error
 					fmt.Fprintf(os.Stderr, "error: %s\n", m.Content)
 				}
 			}
+		}
+
+		// Buffer kickoff streaming responses (printed after banner below).
+		if r.Role == "tool_call" || r.Role == "assistant" || r.Role == "error" {
+			bufferedKickoff = append(bufferedKickoff, r)
 		}
 	}
 }
@@ -185,7 +221,7 @@ func Chat(addr string, logger *slog.Logger) error {
 	}
 	defer conn.Close()
 
-	if err := syncSession(conn, logger, true); err != nil {
+	if _, err := syncSession(conn, logger, true); err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 

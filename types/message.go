@@ -47,14 +47,15 @@ type Request struct {
 
 // Response represents a message from the server to the client.
 type Response struct {
-	ID           string     `json:"id"`
-	Role         string     `json:"role"`
-	Content      string     `json:"content"`
-	Done         bool       `json:"done"`
-	History      []Message  `json:"history,omitempty"`
-	SyncComplete bool       `json:"sync_complete,omitempty"`
-	Usage        *ResponseUsage `json:"usage,omitempty"`
-	Timing       *ResponseTiming  `json:"timing,omitempty"`
+	ID           string          `json:"id"`
+	Role         string          `json:"role"`
+	Content      string          `json:"content"`
+	Done         bool            `json:"done"`
+	History      []Message       `json:"history,omitempty"`
+	SyncComplete bool            `json:"sync_complete,omitempty"`
+	Kickoff      string          `json:"kickoff,omitempty"`
+	Usage        *ResponseUsage  `json:"usage,omitempty"`
+	Timing       *ResponseTiming `json:"timing,omitempty"`
 }
 
 // ResponseUsage holds token usage information.

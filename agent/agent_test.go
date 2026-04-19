@@ -54,7 +54,7 @@ func newFakeAgent(callText string, callTools []types.ToolCall) *Agent {
 	reg := tools.NewRegistry()
 	sess, _ := session.New()
 	logger := slog.Default()
-	return New(fp, reg, sess, logger)
+	return New(fp, reg, sess, logger, nil)
 }
 
 func newFakeAgentWithErr(callErr error) *Agent {
@@ -62,7 +62,7 @@ func newFakeAgentWithErr(callErr error) *Agent {
 	reg := tools.NewRegistry()
 	sess, _ := session.New()
 	logger := slog.Default()
-	return New(fp, reg, sess, logger)
+	return New(fp, reg, sess, logger, nil)
 }
 
 func TestHistory_empty(t *testing.T) {
@@ -178,7 +178,7 @@ func TestProcessMessage_contextCancel(t *testing.T) {
 		cancel()
 	}()
 
-	a := New(blocking, tools.NewRegistry(), nil, slog.Default())
+	a := New(blocking, tools.NewRegistry(), nil, slog.Default(), nil)
 	respCh, err := a.ProcessMessage(ctx, "hi")
 	if err != nil {
 		t.Fatalf("ProcessMessage: %v", err)
@@ -280,7 +280,7 @@ func TestNew_providerStored(t *testing.T) {
 	fp := &fakeProvider{callText: "test"}
 	reg := tools.NewRegistry()
 	sess, _ := session.New()
-	a := New(fp, reg, sess, slog.Default())
+	a := New(fp, reg, sess, slog.Default(), nil)
 	if a.provider != fp {
 		t.Error("provider not stored correctly")
 	}

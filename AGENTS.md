@@ -23,7 +23,8 @@ server/server.go     — WebSocket HTTP server; spawns a per-connection Agent
         └── llm.Provider  — interface (Complete/streaming, Call/structured)
               └── HTTPProvider (llm/http.go) — OpenAI-compatible HTTP client
 
-tools/tools.go       — Registry of executable tools (time, list, view)
+tools/tools.go       — Registry of executable tools (time, list, view, lua, soul, memory)
+memory/memory.go     — In-memory SQLite store for soul (identity) and memories (learnings)
 session/session.go   — In-memory SQLite persistence of conversation history
 types/message.go     — Message, Request, Response, ToolDef, ToolCall structs + JSON marshaling
 config/config.go     — XDG config loader (smith.toml in ~/.config/smith/)
@@ -36,14 +37,17 @@ logging/logging.go   — Dual-output slog setup (file + stdout)
 ## Key patterns
 
 - **Provider interface** (`llm/provider.go`): All LLM backends implement `Complete(ctx, msgs) (<-chan string, error)` for streaming and `Call(ctx, msgs, tools) (CallResult, error)` for structured/one-shot calls. `CallResult` includes `Usage` and `Timing` parsed from the provider's JSON response body.
-- **Tool registry** (`tools/tools.go`): Tools are registered in `NewRegistry()` and exposed via `Definitions()` for the LLM and `Execute()` for dispatch. New tools are added by registering a `toolFunc` and a `ToolDef` in `toolDefs`.
+- **Tool registry** (`tools/tools.go`): Tools are registered in `NewRegistry()` and exposed via `Definitions()` for the LLM and `Execute()` for dispatch. New tools are added by registering a `toolFunc` and a `ToolDef` in `toolDefs`. Stateful tools (soul, memory) are registered via `RegisterFn()`.
+- **Soul**: Plain text identity stored in the agent's SQLite store. The agent reads it via the `soul` tool on kickoff and can modify it freely. No schema — just text.
+- **Memory**: Structured learnings stored in the agent's SQLite store. Categories: lesson, pattern, preference, fact, mistake, context. Accessed via the `memory` tool.
+- **Kickoff**: Configured in `smith.toml` as `kickoff`. On new sessions, the server sends the kickoff as the first user message, flows through the agent loop (tool calls, text), then the client displays "New session" + kickoff text.
 - **Streaming protocol**: Server sends incremental `Response` objects with `Done=false`, final one with `Done=true`. Client diffs content to show deltas.
 - **Session sync**: Clients send `Request{Sync: true}` to receive full history. Server responds with history messages then `SyncComplete: true`.
 - **History immutability**: `Agent.History()` returns a defensive copy. Internal history is protected by `sync.Mutex`.
-- **Config**: `smith.toml` requires `base_url` and `model`. Loaded from XDG config dir (`$XDG_CONFIG_HOME/smith/` or `~/.config/smith/`).
+- **Config**: `smith.toml` requires `base_url` and `model`. Loaded from XDG config dir (`$XDG_CONFIG_HOME/smith/` or `~/.config/smith/`). Optional fields: `system_prompt` (prepended to every LLM request), `kickoff` (first user message on new sessions).
 - **Error responses**: Provider errors use `Role: "error"` (not `"assistant"`), enabling the client to distinguish them from LLM content.
 - **Client modes**: `Chat` colorizes tool calls (yellow), errors (red), and shows a grey stats line (`HH:MM:SS | X (Y/s) => Z (W/s) => N (T.s)`). `Send` suppresses tool calls and stats, printing only the final response.
-- **New sessions**: On first connect, chat prints a grey `"HH:MM:SS | New session"` banner.
+- **New sessions**: On first connect, chat prints a grey `"HH:MM:SS | New session"` banner, then the kickoff text (if configured), then the agent's kickoff response.
 
 ## Testing
 

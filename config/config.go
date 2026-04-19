@@ -14,6 +14,7 @@ type Config struct {
 	APIKey       string `toml:"api_key"`
 	Model        string `toml:"model"`
 	SystemPrompt string `toml:"system_prompt"`
+	Kickoff      string `toml:"kickoff"`
 }
 
 // configName is the name of the config file.

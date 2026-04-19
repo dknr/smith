@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"smith/llm"
+	"smith/memory"
 	"smith/session"
 	"smith/tools"
 	"smith/types"
@@ -22,15 +23,17 @@ type Agent struct {
 	executor *tools.Registry
 	logger   *slog.Logger
 	session  *session.Session
+	memStore *memory.Store
 }
 
-// New creates a new Agent with the given Provider, tool Registry, session, and logger.
-func New(provider llm.Provider, executor *tools.Registry, sess *session.Session, logger *slog.Logger) *Agent {
+// New creates a new Agent with the given Provider, tool Registry, session, logger, and memory store.
+func New(provider llm.Provider, executor *tools.Registry, sess *session.Session, logger *slog.Logger, memStore *memory.Store) *Agent {
 	a := &Agent{
 		provider: provider,
 		executor: executor,
 		logger:   logger,
 		session:  sess,
+		memStore: memStore,
 	}
 	if sess != nil {
 		if history, err := sess.LoadHistory(); err == nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"smith/types"
@@ -18,15 +19,23 @@ type Executor interface {
 
 // Registry is a collection of named tools with execution and definition support.
 type Registry struct {
-	tools map[string]toolFunc
+	mu      sync.Mutex
+	tools   map[string]toolFunc
+	defs    []types.ToolDef
+	defMap  map[string]types.ToolDef
 }
 
 type toolFunc func(ctx context.Context, argsJSON string) (string, error)
 
 // Definitions returns the tool definitions for the LLM.
 func (r *Registry) Definitions() []types.ToolDef {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	defs := make([]types.ToolDef, 0, len(r.tools))
 	for _, def := range toolDefs {
+		defs = append(defs, def)
+	}
+	for _, def := range r.defs {
 		defs = append(defs, def)
 	}
 	return defs
@@ -43,7 +52,13 @@ func (r *Registry) Execute(ctx context.Context, name, argsJSON string) (string, 
 
 // NewRegistry creates a Registry with the built-in tools registered.
 func NewRegistry() *Registry {
-	r := &Registry{tools: make(map[string]toolFunc)}
+	r := &Registry{
+		tools:  make(map[string]toolFunc),
+		defMap: make(map[string]types.ToolDef),
+	}
+	for name, def := range toolDefs {
+		r.defMap[name] = def
+	}
 	r.register("time", toolTime)
 	r.register("list", toolList)
 	r.register("view", toolView)
@@ -53,6 +68,15 @@ func NewRegistry() *Registry {
 
 func (r *Registry) register(name string, fn toolFunc) {
 	r.tools[name] = fn
+	if def, ok := toolDefs[name]; ok {
+		r.defMap[name] = def
+	}
+}
+
+// RegisterFn registers a stateful tool function and its definition.
+func (r *Registry) RegisterFn(name string, fn toolFunc, def types.ToolDef) {
+	r.tools[name] = fn
+	r.defMap[name] = def
 }
 
 // toolDefs holds the JSON schema definitions for built-in tools.

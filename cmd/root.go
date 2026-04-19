@@ -70,7 +70,7 @@ var serveCmd = &cobra.Command{
 
 			executor := tools.NewRegistry()
 			provider := llm.NewProvider(cfg, executor, protoLogger)
-			return server.Serve(listenAddr, provider, executor, sess, logger)
+			return server.Serve(listenAddr, provider, executor, sess, cfg, logger)
 		})
 	},
 }
