@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"smith/llm"
 	"smith/memory"
@@ -23,6 +25,7 @@ type Agent struct {
 	logger   *slog.Logger
 	session  *session.Session
 	memStore *memory.Store
+	turnSeq  atomic.Int64
 }
 
 // New creates a new Agent with the given Provider, tool Registry, session, logger, and memory store.
@@ -37,9 +40,39 @@ func New(provider llm.Provider, executor *tools.Registry, sess *session.Session,
 	if sess != nil {
 		if history, err := sess.LoadHistory(); err == nil {
 			a.history = history
+			a.logger.Info("loaded history", "messages", len(a.history))
 		}
 	}
 	return a
+}
+
+// callStats formats token usage and timing into a concise log string.
+func callStats(usage *llm.Usage, timing *llm.Timing) string {
+	if usage == nil {
+		return ""
+	}
+	promptTokens := usage.PromptTokens
+	completionTokens := usage.CompletionTokens
+	totalTokens := usage.TotalTokens
+	if timing != nil && timing.PromptPerSecond > 0 && timing.PredictedPerSecond > 0 {
+		return fmt.Sprintf("%d (%.1f/s) => %d (%.1f/s) => %d (%.1fs)",
+			promptTokens, timing.PromptPerSecond,
+			completionTokens, timing.PredictedPerSecond,
+			totalTokens, (timing.PromptMs+timing.PredictedMs)/1000)
+	} else if timing != nil {
+		return fmt.Sprintf("%d => %d => %d tokens (%.1fs)",
+			promptTokens, completionTokens, totalTokens,
+			(timing.PromptMs+timing.PredictedMs)/1000)
+	}
+	return fmt.Sprintf("%d => %d => %d tokens", promptTokens, completionTokens, totalTokens)
+}
+
+// toolPreview returns the first 30 characters of output for logging.
+func toolPreview(output string) string {
+	if len(output) <= 30 {
+		return output
+	}
+	return output[:30] + "…"
 }
 
 // ProcessMessage appends a user message to history, sends it to the provider
@@ -56,10 +89,19 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 		a.history = append(a.history, types.Message{Role: "user", Content: content})
 		a.mu.Unlock()
 
+		turn := a.turnSeq.Add(1)
+		a.logger.Info("turn", "turn", turn, "content", content)
+
 		// Loop: call provider, handle tool calls or stream text.
+		var toolCount int
+		var callCount int
+		var outputTokens int
+		start := time.Now()
 		for {
+			callCount++
 			result, err := a.provider.Call(ctx, a.history, a.executor.Definitions())
 			if err != nil {
+				a.logger.Error("provider error", "error", err)
 				respCh <- &types.Response{
 					Role:    "error",
 					Content: err.Error(),
@@ -68,12 +110,21 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 				return
 			}
 
+			stats := callStats(result.Usage, result.Timing)
+			a.logger.Info("provider call", "turn", turn, "call", callCount, "stats", stats)
+
 			if len(result.ToolCalls) > 0 {
-				a.handleToolCalls(ctx, result, respCh)
+				if result.Usage != nil {
+					outputTokens += result.Usage.CompletionTokens
+				}
+				toolCount = a.handleToolCalls(turn, ctx, result, respCh, toolCount)
 				continue
 			}
 
 			// Text response — stream it.
+			if result.Usage != nil {
+				outputTokens += result.Usage.CompletionTokens
+			}
 			a.streamText(ctx, result.Text, result.Usage, result.Timing, respCh)
 
 			// Save all new messages to the session.
@@ -84,6 +135,8 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 				}
 				a.mu.Unlock()
 			}
+
+			a.logger.Info("turn complete", "turn", turn, "calls", callCount, "tools", toolCount, "output_tokens", outputTokens, "duration", time.Since(start).Round(time.Millisecond))
 			return
 		}
 	}()
@@ -91,8 +144,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 	return respCh, nil
 }
 
-func (a *Agent) handleToolCalls(ctx context.Context, result llm.CallResult, respCh chan<- *types.Response) {
-	// Append tool call messages to history and notify the client.
+func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.CallResult, respCh chan<- *types.Response, toolCount int) int {
 	for _, tc := range result.ToolCalls {
 		a.mu.Lock()
 		a.history = append(a.history, types.Message{
@@ -107,11 +159,15 @@ func (a *Agent) handleToolCalls(ctx context.Context, result llm.CallResult, resp
 			Done:    false,
 		}
 
-		a.logger.Debug("executing tool", "name", tc.Name, "args", tc.Arguments)
+		argsDisplay := types.FormatToolCall(tc.Name, tc.Arguments)
+		a.logger.Info("tool", "turn", turn, "name", tc.Name, "args", argsDisplay)
+
 		output, err := a.executor.Execute(ctx, tc.Name, tc.Arguments)
 		if err != nil {
 			output = fmt.Sprintf("Error executing %s: %v", tc.Name, err)
 		}
+
+		a.logger.Info("tool result", "turn", turn, "name", tc.Name, "chars", len(output), "preview", toolPreview(output))
 
 		a.mu.Lock()
 		a.history = append(a.history, types.Message{
@@ -120,7 +176,9 @@ func (a *Agent) handleToolCalls(ctx context.Context, result llm.CallResult, resp
 			ToolID:  tc.ID,
 		})
 		a.mu.Unlock()
+		toolCount++
 	}
+	return toolCount
 }
 
 func (a *Agent) streamText(ctx context.Context, text string, usage *llm.Usage, timing *llm.Timing, respCh chan<- *types.Response) {

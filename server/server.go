@@ -58,6 +58,8 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 
 		logger.Info("client connected", "remote", conn.RemoteAddr().String())
 
+		agentLogger := slog.New(logger.Handler()).With("component", "agent")
+
 		executor := tools.NewRegistry()
 
 		soulTool := tools.NewSoulTool(memStore)
@@ -66,7 +68,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 		executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
 
 		provider := llm.NewProvider(cfg, executor, debugLogger, executor.Definitions())
-		a := agent.New(provider, executor, sess, logger, memStore)
+		a := agent.New(provider, executor, sess, agentLogger, memStore)
 
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -81,12 +83,12 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				continue
 			}
 
-			logger.Debug("received message", "id", req.ID, "content", req.Content)
-
 			if req.Sync {
-				syncSession(conn, a, req.ID, logger, memStore, cfg.Kickoff)
+				syncSession(conn, a, req.ID, logger, agentLogger, memStore, cfg.Kickoff)
 				continue
 			}
+
+			logger.Info("message", "id", req.ID, "content", req.Content)
 
 			respCh, err := a.ProcessMessage(r.Context(), req.Content)
 			if err != nil {
@@ -140,11 +142,12 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 	return srv.ListenAndServe()
 }
 
-func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger *slog.Logger, memStore *memory.Store, kickoff string) {
+func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger, agentLogger *slog.Logger, memStore *memory.Store, kickoff string) {
 	history := a.History()
 
 	// If new session with kickoff, process it through the agent.
 	if len(history) == 0 && kickoff != "" {
+		agentLogger.Info("sync", "kickoff", kickoff)
 		// Send banner immediately so the client doesn't stall.
 		banner := types.Response{
 			ID:   id,
@@ -199,7 +202,7 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger *slog.L
 			logger.Error("failed to write sync complete", "error", err)
 			return
 		}
-		logger.Debug("session synced with kickoff")
+		agentLogger.Info("synced with kickoff")
 		return
 	}
 
@@ -266,5 +269,5 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger *slog.L
 		return
 	}
 
-	logger.Debug("session synced", "messages", len(history))
+	agentLogger.Info("synced", "messages", len(history))
 }
