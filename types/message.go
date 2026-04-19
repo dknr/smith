@@ -53,6 +53,23 @@ type Response struct {
 	Done         bool       `json:"done"`
 	History      []Message  `json:"history,omitempty"`
 	SyncComplete bool       `json:"sync_complete,omitempty"`
+	Usage        *ResponseUsage `json:"usage,omitempty"`
+	Timing       *ResponseTiming  `json:"timing,omitempty"`
+}
+
+// ResponseUsage holds token usage information.
+type ResponseUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// ResponseTiming holds timing information.
+type ResponseTiming struct {
+	PromptMs           float64 `json:"prompt_ms"`
+	PromptPerSecond    float64 `json:"prompt_per_second"`
+	PredictedMs        float64 `json:"predicted_ms"`
+	PredictedPerSecond float64 `json:"predicted_per_second"`
 }
 
 // MarshalRequest encodes a Request as JSON bytes.

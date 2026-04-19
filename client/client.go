@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"smith/types"
 
@@ -24,6 +25,7 @@ func dial(addr string) (*websocket.Conn, error) {
 // syncSession connects to the server and requests a session sync.
 // It prints history messages and verifies sync complete.
 // If colorize is true, tool calls are shown in yellow and errors in red.
+// Returns whether the session was new (no prior history).
 func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 	req := types.Request{
 		ID:   "0",
@@ -39,6 +41,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error
 		return fmt.Errorf("failed to send sync request: %w", err)
 	}
 
+	msgCount := 0
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
@@ -52,11 +55,15 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error
 
 		if r.SyncComplete {
 			logger.Debug("session synced")
+			if msgCount == 0 && colorize {
+				printNewSession()
+			}
 			return nil
 		}
 
 		// Print history messages.
 		for _, m := range r.History {
+			msgCount++
 			if len(m.ToolCalls) > 0 {
 				// Tool call messages are stored with Role=assistant but ToolCalls populated.
 				for _, tc := range m.ToolCalls {
@@ -86,6 +93,11 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) error
 			}
 		}
 	}
+}
+
+// printNewSession prints a grey "New session" line with the current timestamp.
+func printNewSession() {
+	fmt.Printf("\033[90m%s | New session\033[0m\n", time.Now().Format("15:04:05"))
 }
 
 // readLoop reads streaming responses from the server, printing deltas as they arrive.
@@ -130,6 +142,9 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 
 		if r.Done {
 			fmt.Println()
+			if colorize && (r.Usage != nil || r.Timing != nil) {
+				printStatsLine(r.Usage, r.Timing)
+			}
 			return nil
 		}
 	}
@@ -214,4 +229,29 @@ func Chat(addr string, logger *slog.Logger) error {
 	}
 
 	return nil
+}
+
+// printStatsLine prints the grey timestamp + token stats line, matching bantam's format.
+func printStatsLine(usage *types.ResponseUsage, timing *types.ResponseTiming) {
+	var inputTokens, outputTokens, totalTokens int
+	if usage != nil {
+		inputTokens = usage.PromptTokens
+		outputTokens = usage.CompletionTokens
+		totalTokens = usage.TotalTokens
+	}
+
+	fmt.Printf("\033[90m%s | ", time.Now().Format("15:04:05"))
+	if timing != nil && timing.PromptPerSecond > 0 && timing.PredictedPerSecond > 0 {
+		fmt.Printf("%d (%.1f/s) => %d (%.1f/s) => %d (%.1fs)",
+			inputTokens, timing.PromptPerSecond,
+			outputTokens, timing.PredictedPerSecond,
+			totalTokens, (timing.PromptMs+timing.PredictedMs)/1000)
+	} else if timing != nil {
+		fmt.Printf("%d => %d => %d tokens (%.1fs)",
+			inputTokens, outputTokens, totalTokens,
+			(timing.PromptMs+timing.PredictedMs)/1000)
+	} else {
+		fmt.Printf("%d => %d => %d tokens", inputTokens, outputTokens, totalTokens)
+	}
+	fmt.Println("\033[0m")
 }

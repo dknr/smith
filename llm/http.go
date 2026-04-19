@@ -132,6 +132,21 @@ func (t toolCallEntry) toToolCall() types.ToolCall {
 // nonStreamResponse is the top-level non-streaming response.
 type nonStreamResponse struct {
 	Choices []nonStreamChoice `json:"choices"`
+	Usage   nonStreamUsage    `json:"usage,omitempty"`
+	Timing  nonStreamTiming   `json:"timings,omitempty"`
+}
+
+type nonStreamUsage struct {
+	PromptTokens     *int `json:"prompt_tokens"`
+	CompletionTokens *int `json:"completion_tokens"`
+	TotalTokens      *int `json:"total_tokens"`
+}
+
+type nonStreamTiming struct {
+	PromptMs           *float64 `json:"prompt_ms"`
+	PromptPerSecond    *float64 `json:"prompt_per_second"`
+	PredictedMs        *float64 `json:"predicted_ms"`
+	PredictedPerSecond *float64 `json:"predicted_per_second"`
 }
 
 // processSSELine handles a complete SSE event payload and sends tokens to the channel.
@@ -283,8 +298,43 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 
 	p.logProtocol(ctx, http.MethodPost, url, body, result)
 
+	var usage *Usage
+	if result.Usage.PromptTokens != nil || result.Usage.CompletionTokens != nil {
+		usage = &Usage{
+			PromptTokens:     ptrInt(result.Usage.PromptTokens),
+			CompletionTokens: ptrInt(result.Usage.CompletionTokens),
+			TotalTokens:      ptrInt(result.Usage.TotalTokens),
+		}
+	}
+
+	var timing *Timing
+	if result.Timing.PromptMs != nil || result.Timing.PromptPerSecond != nil {
+		timing = &Timing{
+			PromptMs:           ptrFloat64(result.Timing.PromptMs),
+			PromptPerSecond:    ptrFloat64(result.Timing.PromptPerSecond),
+			PredictedMs:        ptrFloat64(result.Timing.PredictedMs),
+			PredictedPerSecond: ptrFloat64(result.Timing.PredictedPerSecond),
+		}
+	}
+
 	return CallResult{
 		Text:      msg.Content,
 		ToolCalls: toolCalls,
+		Usage:     usage,
+		Timing:    timing,
 	}, nil
+}
+
+func ptrInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func ptrFloat64(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }

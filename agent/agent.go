@@ -73,7 +73,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 			}
 
 			// Text response — stream it.
-			a.streamText(ctx, result.Text, respCh)
+			a.streamText(ctx, result.Text, result.Usage, result.Timing, respCh)
 
 			// Save all new messages to the session.
 			if a.session != nil {
@@ -122,7 +122,7 @@ func (a *Agent) handleToolCalls(ctx context.Context, result llm.CallResult, resp
 	}
 }
 
-func (a *Agent) streamText(ctx context.Context, text string, respCh chan<- *types.Response) {
+func (a *Agent) streamText(ctx context.Context, text string, usage *llm.Usage, timing *llm.Timing, respCh chan<- *types.Response) {
 	var accumulated strings.Builder
 	// Stream the text character by character for consistency with the
 	// existing streaming protocol.
@@ -142,10 +142,31 @@ func (a *Agent) streamText(ctx context.Context, text string, respCh chan<- *type
 	})
 	a.mu.Unlock()
 
+	var respUsage *types.ResponseUsage
+	if usage != nil {
+		respUsage = &types.ResponseUsage{
+			PromptTokens:     usage.PromptTokens,
+			CompletionTokens: usage.CompletionTokens,
+			TotalTokens:      usage.TotalTokens,
+		}
+	}
+
+	var respTiming *types.ResponseTiming
+	if timing != nil {
+		respTiming = &types.ResponseTiming{
+			PromptMs:           timing.PromptMs,
+			PromptPerSecond:    timing.PromptPerSecond,
+			PredictedMs:        timing.PredictedMs,
+			PredictedPerSecond: timing.PredictedPerSecond,
+		}
+	}
+
 	respCh <- &types.Response{
 		Role:    "assistant",
 		Content: accumulated.String(),
 		Done:    true,
+		Usage:   respUsage,
+		Timing:  respTiming,
 	}
 }
 
