@@ -103,3 +103,95 @@ func TestUnmarshalResponse_missingDone(t *testing.T) {
 		t.Error("expected Done to default to false when missing")
 	}
 }
+
+func TestMessage_toolCalls(t *testing.T) {
+	m := Message{
+		Role:    "assistant",
+		Content: "",
+		ToolCalls: []ToolCall{
+			{ID: "call_1", Name: "time", Arguments: "{}"},
+		},
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("Marshal Message with tool_calls: %v", err)
+	}
+
+	var got Message
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal Message with tool_calls: %v", err)
+	}
+	if len(got.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(got.ToolCalls))
+	}
+	if got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].Name != "time" {
+		t.Errorf("unexpected tool call: %+v", got.ToolCalls[0])
+	}
+}
+
+func TestMessage_toolResult(t *testing.T) {
+	m := Message{
+		Role:   "tool",
+		Content: "2026-04-18T12:00:00Z",
+		ToolID: "call_1",
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("Marshal Message with tool result: %v", err)
+	}
+
+	var got Message
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal Message with tool result: %v", err)
+	}
+	if got.Role != "tool" || got.ToolID != "call_1" {
+		t.Errorf("unexpected tool message: %+v", got)
+	}
+}
+
+func TestMessage_emptyToolCallsNotOmitted(t *testing.T) {
+	m := Message{Role: "assistant", Content: "hello", ToolCalls: nil}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("Marshal Message without tool_calls: %v", err)
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	if _, ok := raw["tool_calls"]; ok {
+		t.Error("Message without tool_calls should not include 'tool_calls' field")
+	}
+}
+
+func TestToolDef_marshal(t *testing.T) {
+	def := ToolDef{
+		Name:        "time",
+		Description: "Get the current time",
+		Parameters: map[string]interface{}{
+			"type": "object",
+		},
+	}
+	data, err := json.Marshal(def)
+	if err != nil {
+		t.Fatalf("Marshal ToolDef: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	if raw["type"] != "function" {
+		t.Errorf("expected type=function, got %v", raw["type"])
+	}
+	fn, ok := raw["function"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected function key to be an object, got %T", raw["function"])
+	}
+	if fn["name"] != "time" {
+		t.Errorf("function.name = %v, want %q", fn["name"], "time")
+	}
+	if fn["description"] != "Get the current time" {
+		t.Errorf("function.description = %v", fn["description"])
+	}
+}

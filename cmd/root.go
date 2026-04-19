@@ -10,6 +10,7 @@ import (
 	"smith/llm"
 	"smith/logging"
 	"smith/server"
+	"smith/tools"
 
 	"github.com/spf13/cobra"
 )
@@ -46,8 +47,9 @@ var serveCmd = &cobra.Command{
 				return err
 			}
 
-			provider := llm.NewProvider(cfg)
-			return server.Serve(listenAddr, provider, logger)
+			executor := tools.NewRegistry()
+			provider := llm.NewProvider(cfg, executor)
+			return server.Serve(listenAddr, provider, executor, logger)
 		})
 	},
 }

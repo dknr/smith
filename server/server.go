@@ -11,6 +11,7 @@ import (
 
 	"smith/agent"
 	"smith/llm"
+	"smith/tools"
 	"smith/types"
 
 	"github.com/gorilla/websocket"
@@ -27,7 +28,7 @@ var upgrader = websocket.Upgrader{
 // Serve starts a WebSocket server on the given address that processes messages
 // through an LLM agent and sends responses back to the client.
 // It shuts down gracefully on SIGINT or SIGTERM.
-func Serve(addr string, provider llm.Provider, logger *slog.Logger) error {
+func Serve(addr string, provider llm.Provider, executor *tools.Registry, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -37,7 +38,7 @@ func Serve(addr string, provider llm.Provider, logger *slog.Logger) error {
 		}
 		logger.Info("client connected", "remote", conn.RemoteAddr().String())
 
-		agent := agent.New(provider)
+		agent := agent.New(provider, executor, logger)
 
 		for {
 			_, msg, err := conn.ReadMessage()

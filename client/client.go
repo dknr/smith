@@ -36,6 +36,12 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger) error {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
+		// Tool call notifications are printed as-is, not as deltas.
+		if r.Role == "tool_call" {
+			fmt.Println(r.Content)
+			continue
+		}
+
 		if len(r.Content) > len(lastContent) {
 			fmt.Print(r.Content[len(lastContent):])
 		}

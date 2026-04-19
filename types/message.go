@@ -4,8 +4,37 @@ import "encoding/json"
 
 // Message represents a single message in a conversation.
 type Message struct {
-	Role    string
-	Content string
+	Role      string     `json:"role"`
+	Content   string     `json:"content"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	ToolID    string     `json:"tool_call_id,omitempty"`
+}
+
+// ToolCall represents a tool invocation from an LLM response.
+type ToolCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON-encoded arguments
+}
+
+// ToolDef describes a tool available to the LLM.
+type ToolDef struct {
+	Name        string                 `json:"-"`
+	Description string                 `json:"-"`
+	Parameters  map[string]interface{} `json:"-"`
+}
+
+// MarshalJSON encodes ToolDef in the OpenAI-compatible format:
+// {"type":"function","function":{"name":"...","description":"...","parameters":{...}}}
+func (t ToolDef) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		"type": "function",
+		"function": map[string]interface{}{
+			"name":        t.Name,
+			"description": t.Description,
+			"parameters":  t.Parameters,
+		},
+	})
 }
 
 // Request represents a message from the client to the server.
