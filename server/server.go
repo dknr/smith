@@ -188,7 +188,11 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger *slog.L
 			}
 			continue
 		}
-		// Regular message (user, tool, assistant text, error).
+		// Tool responses are internal — not sent to the client in the live path.
+		if m.Role == "tool" {
+			continue
+		}
+		// Regular message (user, assistant text, error).
 		resp := types.Response{
 			ID:      id,
 			Role:    m.Role,
