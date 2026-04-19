@@ -14,8 +14,8 @@ import (
 func TestRegistry_Definitions(t *testing.T) {
 	r := NewRegistry()
 	defs := r.Definitions()
-	if len(defs) != 4 {
-		t.Fatalf("expected 4 tool definitions, got %d", len(defs))
+	if len(defs) != 5 {
+		t.Fatalf("expected 5 tool definitions, got %d", len(defs))
 	}
 
 	names := make(map[string]bool)
@@ -25,7 +25,7 @@ func TestRegistry_Definitions(t *testing.T) {
 			t.Errorf("tool %s has empty description", d.Name)
 		}
 	}
-	for _, want := range []string{"time", "list", "view", "lua"} {
+	for _, want := range []string{"time", "list", "view", "lua", "edit"} {
 		if !names[want] {
 			t.Errorf("missing tool definition: %s", want)
 		}

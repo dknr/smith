@@ -63,6 +63,7 @@ func NewRegistry() *Registry {
 	r.register("list", toolList)
 	r.register("view", toolView)
 	r.register("lua", toolLua)
+	r.register("edit", toolEdit)
 	return r
 }
 
@@ -142,6 +143,32 @@ var toolDefs = map[string]types.ToolDef{
 				},
 			},
 			"required": []string{"code"},
+		},
+	},
+	"edit": {
+		Name:        "edit",
+		Description: "Perform exact-match find-and-replace edits on a file, or create the file if old_string is empty. The path is relative to the working directory and must not contain path traversal.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"file_path": map[string]interface{}{
+					"type":        "string",
+					"description": "Path to the file (relative to working directory)",
+				},
+				"old_string": map[string]interface{}{
+					"type":        "string",
+					"description": "Exact text to find (empty for new files)",
+				},
+				"new_string": map[string]interface{}{
+					"type":        "string",
+					"description": "Replacement text",
+				},
+				"replace_all": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Replace all occurrences (default: false)",
+				},
+			},
+			"required": []string{"file_path", "old_string", "new_string"},
 		},
 	},
 }
