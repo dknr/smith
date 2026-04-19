@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -16,14 +18,35 @@ import (
 
 // HTTPProvider implements Provider by calling an OpenAI-compatible HTTP API.
 type HTTPProvider struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	Tools   []types.ToolDef
+	BaseURL         string
+	APIKey          string
+	Model           string
+	Tools           []types.ToolDef
+	ProtocolLogger  *slog.Logger
 }
 
 // defaultTimeout is the HTTP client timeout for provider requests.
 const defaultTimeout = 60 * time.Second
+
+// logProtocol writes a request/response pair to the protocol logger.
+func (p *HTTPProvider) logProtocol(ctx context.Context, method, url string, reqBody, respBody interface{}) {
+	if p.ProtocolLogger == nil {
+		return
+	}
+	id := make([]byte, 6)
+	_, _ = rand.Read(id)
+	reqJSON, _ := json.MarshalIndent(reqBody, "", "  ")
+	respJSON, _ := json.MarshalIndent(respBody, "", "  ")
+	p.ProtocolLogger.InfoContext(ctx, "",
+		"ts", time.Now().UTC().Format(time.RFC3339),
+		"request", fmt.Sprintf("REQUEST %x", id),
+		"method", method,
+		"url", url,
+		"request_body", string(reqJSON),
+		"response", fmt.Sprintf("RESPONSE %x", id),
+		"response_body", string(respJSON),
+	)
+}
 
 // chatRequest is the JSON request body for the chat completions endpoint.
 type chatRequest struct {
@@ -172,15 +195,19 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 		defer resp.Body.Close()
 		defer close(ch)
 
+		var fullResponse strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "data: ") {
 				payload := strings.TrimPrefix(line, "data: ")
 				if payload == "[DONE]" {
+					p.logProtocol(ctx, http.MethodPost, url, body, fullResponse.String())
 					return
 				}
 				processSSELine(payload, ch)
+				fullResponse.WriteString(payload)
+				fullResponse.WriteString("\n")
 			}
 		}
 	}()
@@ -253,6 +280,9 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 	for _, tc := range msg.ToolCalls {
 		toolCalls = append(toolCalls, tc.toToolCall())
 	}
+
+	p.logProtocol(ctx, http.MethodPost, url, body, result)
+
 	return CallResult{
 		Text:      msg.Content,
 		ToolCalls: toolCalls,

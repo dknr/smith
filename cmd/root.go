@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	listenAddr string
-	version    = "dev"
+	listenAddr   string
+	logProtocol  bool
+	version      = "dev"
 )
 
 var rootCmd = &cobra.Command{
@@ -48,6 +49,17 @@ var serveCmd = &cobra.Command{
 				return err
 			}
 
+			var protoLogger *slog.Logger
+			if logProtocol {
+				f, err := os.OpenFile("smith-protocol.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err != nil {
+					logger.Error("protocol log error", "error", err)
+					return err
+				}
+				protoLogger = slog.New(slog.NewJSONHandler(f, nil))
+				defer f.Close()
+			}
+
 			sess, err := session.New()
 			if err != nil {
 				logger.Error("session error", "error", err)
@@ -56,7 +68,7 @@ var serveCmd = &cobra.Command{
 			defer sess.Close()
 
 			executor := tools.NewRegistry()
-			provider := llm.NewProvider(cfg, executor)
+			provider := llm.NewProvider(cfg, executor, protoLogger)
 			return server.Serve(listenAddr, provider, executor, sess, logger)
 		})
 	},
@@ -96,4 +108,5 @@ func init() {
 	rootCmd.AddCommand(chatCmd)
 
 	rootCmd.PersistentFlags().StringVarP(&listenAddr, "addr", "a", "localhost:26856", "server address")
+	serveCmd.Flags().BoolVar(&logProtocol, "log-protocol", false, "log protocol traffic to smith-protocol.log")
 }

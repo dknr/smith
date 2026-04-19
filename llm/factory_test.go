@@ -15,7 +15,7 @@ func TestNewProvider_fields(t *testing.T) {
 	}
 	exec := tools.NewRegistry()
 
-	p := NewProvider(cfg, exec)
+	p := NewProvider(cfg, exec, nil)
 	hp, ok := p.(*HTTPProvider)
 	if !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", p)
@@ -42,7 +42,7 @@ func TestNewProvider_emptyAPIKey(t *testing.T) {
 	}
 	exec := tools.NewRegistry()
 
-	p := NewProvider(cfg, exec)
+	p := NewProvider(cfg, exec, nil)
 	hp, ok := p.(*HTTPProvider)
 	if !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", p)
