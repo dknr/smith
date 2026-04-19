@@ -8,6 +8,7 @@ import (
 	"smith/client"
 	"smith/config"
 	"smith/logging"
+	"smith/memory"
 	"smith/server"
 	"smith/session"
 
@@ -38,14 +39,20 @@ func runWithLogger(programName string, fn func(logger *slog.Logger) error) {
 }
 
 var serveCmd = &cobra.Command{
-	Use:   "serve",
+	Use:   "serve [db_path]",
 	Short: "Start the websocket server",
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		runWithLogger("smith", func(logger *slog.Logger) error {
 			cfg, err := config.Load()
 			if err != nil {
 				logger.Error("config error", "error", err)
 				return err
+			}
+
+			dbPath := ":memory:"
+			if len(args) > 0 {
+				dbPath = args[0]
 			}
 
 			var protoLogger *slog.Logger
@@ -59,14 +66,21 @@ var serveCmd = &cobra.Command{
 				defer f.Close()
 			}
 
-			sess, err := session.New()
+			sess, err := session.NewWithDB(dbPath)
 			if err != nil {
 				logger.Error("session error", "error", err)
 				return err
 			}
 			defer sess.Close()
 
-			return server.Serve(listenAddr, cfg, protoLogger, sess, logger)
+			memStore, err := memory.NewWithDB(dbPath)
+			if err != nil {
+				logger.Error("memory store error", "error", err)
+				return err
+			}
+			defer memStore.Close()
+
+			return server.Serve(listenAddr, cfg, protoLogger, sess, memStore, logger)
 		})
 	},
 }

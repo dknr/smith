@@ -40,7 +40,13 @@ CREATE TABLE IF NOT EXISTS agent_state (
 
 // New creates a new agent state store backed by an in-memory SQLite database.
 func New() (*Store, error) {
-	conn, err := sqlite3.Open(":memory:")
+	return NewWithDB(":memory:")
+}
+
+// NewWithDB creates a new agent state store backed by the given SQLite database path.
+// Use ":memory:" for an ephemeral store, or a file path for persistence.
+func NewWithDB(dbPath string) (*Store, error) {
+	conn, err := sqlite3.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open agent state database: %w", err)
 	}

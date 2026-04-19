@@ -27,7 +27,13 @@ CREATE TABLE IF NOT EXISTS messages (
 
 // New creates a new in-memory session and initializes the database.
 func New() (*Session, error) {
-	conn, err := sqlite3.Open(":memory:")
+	return NewWithDB(":memory:")
+}
+
+// NewWithDB creates a new session backed by the given SQLite database path.
+// Use ":memory:" for an ephemeral session, or a file path for persistence.
+func NewWithDB(dbPath string) (*Session, error) {
+	conn, err := sqlite3.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open session database: %w", err)
 	}

@@ -14,7 +14,7 @@ go test ./package/... -run TestName         # Run specific test
 
 ```
 cmd/root.go          — cobra CLI entry point; wires everything together
-  ├── serve          — starts the WebSocket server
+  ├── serve [db_path]  — starts the WebSocket server; optional db_path for persistence
   ├── send [msg]     — one-shot message → response
   └── chat           — interactive loop with session sync
 
@@ -113,3 +113,4 @@ After unit tests pass, test end-to-end with a real LLM provider:
 - **Default listen address**: `localhost:26856`. Only change with `-a` if the port is already in use.
 - **Go 1.25**: Uses `log/slog` and `sqlite3` from `ncruces` (WASM-optimized). Don't swap in `database/sql` — the ncruces driver uses a different API (`stmt.Step()`, `stmt.BindText()`).
 - **Stats/timing from provider**: Token usage and timing come from the LLM provider's JSON response body (`usage` and `timings` keys), not a local stopwatch. Some providers (llama.cpp) include `timings`; others may only include `usage`.
+- **Persistent database**: `smith serve [db_path]` opens a SQLite file for both session history and agent memory (soul + memories). Omit `db_path` for in-memory (ephemeral) mode.

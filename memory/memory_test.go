@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -219,4 +220,52 @@ func TestSetSoulOverwrite(t *testing.T) {
 	if got != "second" {
 		t.Errorf("got %q, want %q", got, "second")
 	}
+}
+
+func TestNewWithDB_file(t *testing.T) {
+	tmp := t.TempDir()
+	path := tmp + "/test.db"
+	store, err := NewWithDB(path)
+	if err != nil {
+		t.Fatalf("NewWithDB: %v", err)
+	}
+
+	id, err := store.Add("persisted memory", "lesson", "test")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := store.SetSoul("I persist"); err != nil {
+		t.Fatalf("SetSoul: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Reopen and verify.
+	store2, err := NewWithDB(path)
+	if err != nil {
+		t.Fatalf("NewWithDB reopen: %v", err)
+	}
+	defer store2.Close()
+
+	mems, err := store2.LoadAll(10)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if len(mems) != 1 || mems[0].Content != "persisted memory" {
+		t.Errorf("expected persisted memory, got %+v", mems)
+	}
+	if mems[0].ID != id {
+		t.Errorf("expected ID %d, got %d", id, mems[0].ID)
+	}
+
+	soul, err := store2.GetSoul()
+	if err != nil {
+		t.Fatalf("GetSoul: %v", err)
+	}
+	if soul != "I persist" {
+		t.Errorf("soul = %q, want %q", soul, "I persist")
+	}
+
+	os.Remove(path)
 }

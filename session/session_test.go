@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"testing"
 
 	"smith/types"
@@ -160,4 +161,38 @@ func TestClose(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Errorf("Close: %v", err)
 	}
+}
+
+func TestNewWithDB_file(t *testing.T) {
+	tmp := t.TempDir()
+	path := tmp + "/test.db"
+	s, err := NewWithDB(path)
+	if err != nil {
+		t.Fatalf("NewWithDB: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.Append(types.Message{Role: "user", Content: "persisted"}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Reopen and verify data persisted.
+	s2, err := NewWithDB(path)
+	if err != nil {
+		t.Fatalf("NewWithDB reopen: %v", err)
+	}
+	defer s2.Close()
+
+	h, err := s2.LoadHistory()
+	if err != nil {
+		t.Fatalf("LoadHistory: %v", err)
+	}
+	if len(h) != 1 || h[0].Content != "persisted" {
+		t.Errorf("expected persisted message, got %+v", h)
+	}
+
+	os.Remove(path)
 }
