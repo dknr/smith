@@ -57,7 +57,9 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 			logger.Error("autonomous kickoff error", "error", err)
 		} else {
 			for resp := range respCh {
-				logger.Info("kickoff response", "role", resp.Role, "done", resp.Done, "content", resp.Content)
+				if resp.Done {
+					logger.Info("kickoff response", "role", resp.Role, "content", resp.Content)
+				}
 			}
 		}
 		logger.Info("autonomous kickoff complete")
