@@ -89,6 +89,25 @@ func (s *Session) LoadHistory() ([]types.Message, error) {
 	return messages, nil
 }
 
+// Clear deletes all messages from the session.
+func (s *Session) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	err := s.conn.Exec("DELETE FROM messages")
+	if err != nil {
+		return fmt.Errorf("failed to clear session: %w", err)
+	}
+
+	// Reset the autoincrement counter so new IDs start from 1.
+	err = s.conn.Exec("DELETE FROM sqlite_sequence WHERE name='messages'")
+	if err != nil {
+		return fmt.Errorf("failed to reset sequence: %w", err)
+	}
+
+	return nil
+}
+
 // Append saves messages to the session.
 func (s *Session) Append(messages ...types.Message) error {
 	s.mu.Lock()

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -160,6 +161,73 @@ func TestClose(t *testing.T) {
 	}
 	if err := s.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+}
+
+func TestClear(t *testing.T) {
+	s, err := New()
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.Append(
+		types.Message{Role: "user", Content: "hello"},
+		types.Message{Role: "assistant", Content: "hi there"},
+	); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	h, err := s.LoadHistory()
+	if err != nil {
+		t.Fatalf("LoadHistory: %v", err)
+	}
+	if len(h) != 2 {
+		t.Fatalf("expected 2 messages before clear, got %d", len(h))
+	}
+
+	if err := s.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+
+	h, err = s.LoadHistory()
+	if err != nil {
+		t.Fatalf("LoadHistory after clear: %v", err)
+	}
+	if len(h) != 0 {
+		t.Errorf("expected empty history after clear, got %d messages", len(h))
+	}
+}
+
+func TestClear_resetsSequence(t *testing.T) {
+	s, err := New()
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	// Insert multiple messages to get IDs > 1.
+	for i := 0; i < 5; i++ {
+		if err := s.Append(types.Message{Role: "user", Content: fmt.Sprintf("msg%d", i)}); err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+	}
+
+	if err := s.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+
+	// After clear, new messages should start from ID 1.
+	if err := s.Append(types.Message{Role: "user", Content: "after clear"}); err != nil {
+		t.Fatalf("Append after clear: %v", err)
+	}
+
+	h, err := s.LoadHistory()
+	if err != nil {
+		t.Fatalf("LoadHistory: %v", err)
+	}
+	if len(h) != 1 || h[0].Content != "after clear" {
+		t.Errorf("expected single message after clear, got %+v", h)
 	}
 }
 

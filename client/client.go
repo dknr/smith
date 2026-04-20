@@ -249,6 +249,13 @@ func Chat(addr string, logger *slog.Logger) error {
 			logger.Debug("quit command received, exiting")
 			break
 		}
+		if strings.TrimSpace(input) == "/reset" || strings.TrimSpace(input) == "/clear" {
+			if err := sendReset(conn, logger, true); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				break
+			}
+			continue
+		}
 		if strings.TrimSpace(input) == "" {
 			continue
 		}
@@ -279,6 +286,70 @@ func Chat(addr string, logger *slog.Logger) error {
 	}
 
 	return nil
+}
+
+// sendReset sends a reset request to the server, prints "New session",
+// and streams the kickoff response.
+func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
+	req := types.Request{
+		ID:    "0",
+		Reset: true,
+	}
+	data, err := types.MarshalRequest(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal reset request: %w", err)
+	}
+
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		return fmt.Errorf("failed to send reset request: %w", err)
+	}
+
+	var bufferedKickoff []*types.Response
+	var bannerPrinted bool
+	var lastContent string
+	for {
+		_, resp, err := conn.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("failed to read reset response: %w", err)
+		}
+
+		r, err := types.UnmarshalResponse(resp)
+		if err != nil {
+			return fmt.Errorf("failed to parse reset response: %w", err)
+		}
+
+		// Print "New session" banner once on first assistant chunk.
+		if r.Role == "assistant" && !r.Done && colorize && !bannerPrinted {
+			printNewSession()
+			bannerPrinted = true
+		}
+
+		// Buffer kickoff streaming responses for replay after banner.
+		if r.Role == "tool_call" || r.Role == "assistant" || r.Role == "error" {
+			bufferedKickoff = append(bufferedKickoff, r)
+		}
+
+		// Render non-assistant roles immediately.
+		if r.Role != "assistant" {
+			renderResponse(r, colorize)
+			continue
+		}
+
+		// Assistant: delta printing (skip done response — already printed).
+		if r.Done {
+			fmt.Println()
+			if r.Reset && colorize && (r.Usage != nil || r.Timing != nil) {
+				printStatsLine(r.Usage, r.Timing)
+			}
+			return nil
+		}
+
+		// Print only the new characters since last response.
+		if len(r.Content) > len(lastContent) {
+			fmt.Print(r.Content[len(lastContent):])
+		}
+		lastContent = r.Content
+	}
 }
 
 // printStatsLine prints the grey timestamp + token stats line, matching bantam's format.

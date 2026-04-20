@@ -237,3 +237,34 @@ func (a *Agent) History() []types.Message {
 	copy(h, a.history)
 	return h
 }
+
+// Reset clears all conversation history (in-memory and session), resets the
+// turn sequence, and optionally runs the kickoff message through the agent
+// loop. Returns a response channel to stream kickoff results to the client.
+func (a *Agent) Reset(ctx context.Context, kickoff string) (<-chan *types.Response, error) {
+	// Clear in-memory history.
+	a.mu.Lock()
+	a.history = nil
+	a.mu.Unlock()
+
+	// Clear session database.
+	if a.session != nil {
+		if err := a.session.Clear(); err != nil {
+			return nil, fmt.Errorf("failed to clear session: %w", err)
+		}
+	}
+
+	// Reset turn sequence.
+	a.turnSeq.Store(0)
+
+	// Run kickoff through the agent loop if provided.
+	if kickoff != "" {
+		return a.ProcessMessage(ctx, kickoff)
+	}
+
+	// No kickoff — return a single marker response.
+	ch := make(chan *types.Response, 1)
+	ch <- &types.Response{Role: "reset", Done: true}
+	close(ch)
+	return ch, nil
+}

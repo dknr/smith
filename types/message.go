@@ -47,6 +47,7 @@ type Request struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 	Sync    bool   `json:"sync"`
+	Reset   bool   `json:"reset"`
 }
 
 // Response represents a message from the server to the client.
@@ -57,6 +58,7 @@ type Response struct {
 	Done         bool            `json:"done"`
 	History      []Message       `json:"history,omitempty"` // Deprecated: use inline Response objects instead.
 	SyncComplete bool            `json:"sync_complete,omitempty"`
+	Reset        bool            `json:"reset,omitempty"`
 	Kickoff      string          `json:"kickoff,omitempty"`
 	Usage        *ResponseUsage  `json:"usage,omitempty"`
 	Timing       *ResponseTiming `json:"timing,omitempty"`

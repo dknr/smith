@@ -105,6 +105,31 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				continue
 			}
 
+			if req.Reset {
+				logger.Info("session reset requested")
+				respCh, err := a.Reset(r.Context(), cfg.Kickoff)
+				if err != nil {
+					logger.Error("reset error", "error", err)
+					continue
+				}
+				for resp := range respCh {
+					resp.ID = req.ID
+					resp.Reset = true
+
+					data, err := types.MarshalResponse(*resp)
+					if err != nil {
+						logger.Error("failed to marshal response", "error", err)
+						break
+					}
+
+					if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+						logger.Error("failed to write response", "error", err)
+						break
+					}
+				}
+				continue
+			}
+
 			logger.Info("message", "id", req.ID, "content", req.Content)
 
 			respCh, err := a.ProcessMessage(r.Context(), req.Content)
