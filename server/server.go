@@ -38,6 +38,17 @@ var (
 // through an LLM agent and sends responses back to the client.
 // It shuts down gracefully on SIGINT or SIGTERM.
 func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *session.Session, memStore *memory.Store, logger *slog.Logger) error {
+	// Shared across all connections.
+	executor := tools.NewRegistry()
+
+	soulTool := tools.NewSoulTool(memStore)
+	memoryTool := tools.NewMemoryTool(memStore)
+	executor.RegisterFn("soul", soulTool.Execute, tools.SoulToolDef)
+	executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
+
+	provider := llm.NewProvider(cfg, executor, debugLogger, executor.Definitions())
+	a := agent.New(provider, executor, sess, logger, memStore)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Single-session: reject if a connection is already active.
@@ -58,17 +69,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 
 		logger.Info("client connected", "remote", conn.RemoteAddr().String())
 
-		agentLogger := slog.New(logger.Handler()).With("component", "agent")
-
-		executor := tools.NewRegistry()
-
-		soulTool := tools.NewSoulTool(memStore)
-		memoryTool := tools.NewMemoryTool(memStore)
-		executor.RegisterFn("soul", soulTool.Execute, tools.SoulToolDef)
-		executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
-
-		provider := llm.NewProvider(cfg, executor, debugLogger, executor.Definitions())
-		a := agent.New(provider, executor, sess, agentLogger, memStore)
+		agentLogger := slog.New(logger.Handler()).With("component", "agent", "conn", conn.RemoteAddr().String())
 
 		for {
 			_, msg, err := conn.ReadMessage()
