@@ -52,11 +52,12 @@ func toolEdit(ctx context.Context, argsJSON string) (string, error) {
 		if count == 0 {
 			return "", fmt.Errorf("old_string not found in file")
 		}
-		if !*p.ReplaceAll && count > 1 {
+		replaceAll := p.ReplaceAll != nil && *p.ReplaceAll
+		if !replaceAll && count > 1 {
 			return "", fmt.Errorf("old_string matches %d locations; set replace_all=true to replace all, or provide more context for a unique match", count)
 		}
 
-		if *p.ReplaceAll {
+		if replaceAll {
 			content = strings.ReplaceAll(content, p.OldString, p.NewString)
 		} else {
 			content = strings.Replace(content, p.OldString, p.NewString, 1)
