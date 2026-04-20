@@ -49,6 +49,20 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 	provider := llm.NewProvider(cfg, executor, debugLogger, executor.Definitions())
 	a := agent.New(provider, executor, sess, logger, memStore)
 
+	// Run kickoff autonomously when session is empty and kickoff is configured.
+	if cfg.Kickoff != "" && len(a.History()) == 0 {
+		logger.Info("autonomous kickoff", "message", cfg.Kickoff)
+		respCh, err := a.ProcessMessage(context.Background(), cfg.Kickoff)
+		if err != nil {
+			logger.Error("autonomous kickoff error", "error", err)
+		} else {
+			for resp := range respCh {
+				logger.Info("kickoff response", "role", resp.Role, "done", resp.Done, "content", resp.Content)
+			}
+		}
+		logger.Info("autonomous kickoff complete")
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Single-session: reject if a connection is already active.
@@ -146,68 +160,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger, agentLogger *slog.Logger, memStore *memory.Store, kickoff string) {
 	history := a.History()
 
-	// If new session with kickoff, process it through the agent.
-	if len(history) == 0 && kickoff != "" {
-		agentLogger.Info("sync", "kickoff", kickoff)
-		// Send banner immediately so the client doesn't stall.
-		banner := types.Response{
-			ID:   id,
-			Role: "new_session",
-			Done: true,
-		}
-		data, err := types.MarshalResponse(banner)
-		if err != nil {
-			logger.Error("failed to marshal new session banner", "error", err)
-			return
-		}
-		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			logger.Error("failed to write new session banner", "error", err)
-			return
-		}
-
-		respCh, err := a.ProcessMessage(context.Background(), kickoff)
-		if err != nil {
-			logger.Error("kickoff error", "error", err)
-			return
-		}
-
-		// Stream all responses from the kickoff.
-		for resp := range respCh {
-			resp.ID = id
-			data, err := types.MarshalResponse(*resp)
-			if err != nil {
-				logger.Error("failed to marshal kickoff response", "error", err)
-				return
-			}
-			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				logger.Error("failed to write kickoff response", "error", err)
-				return
-			}
-		}
-
-		// Send sync complete with kickoff text so client can display it.
-		resp := types.Response{
-			ID:           id,
-			Role:         "sync",
-			Content:      "",
-			Done:         true,
-			SyncComplete: true,
-			Kickoff:      kickoff,
-		}
-		data, err = types.MarshalResponse(resp)
-		if err != nil {
-			logger.Error("failed to marshal sync complete", "error", err)
-			return
-		}
-		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			logger.Error("failed to write sync complete", "error", err)
-			return
-		}
-		agentLogger.Info("synced with kickoff")
-		return
-	}
-
-	// Convert history messages to Response objects and stream them.
+	// Stream history messages.
 	for _, m := range history {
 		if len(m.ToolCalls) > 0 {
 			// Tool call from assistant — emit one Response per tool call.
