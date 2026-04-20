@@ -29,8 +29,8 @@ func TestNewProvider_fields(t *testing.T) {
 	if hp.Model != "test-model" {
 		t.Errorf("Model = %q, want %q", hp.Model, "test-model")
 	}
-	if len(hp.Tools) != 5 {
-		t.Errorf("expected 5 tools, got %d", len(hp.Tools))
+	if len(hp.Tools) != 6 {
+		t.Errorf("expected 6 tools, got %d", len(hp.Tools))
 	}
 }
 
