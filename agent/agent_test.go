@@ -86,8 +86,8 @@ func TestProcessMessage_singleTurn(t *testing.T) {
 		responses = append(responses, r)
 	}
 
-	if len(responses) != len("Hello world")+1 {
-		t.Fatalf("expected %d responses (one per char + done), got %d", len("Hello world")+1, len(responses))
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 response (done), got %d", len(responses))
 	}
 }
 

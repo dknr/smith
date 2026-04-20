@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -182,22 +181,10 @@ func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.Call
 }
 
 func (a *Agent) streamText(ctx context.Context, text string, usage *llm.Usage, timing *llm.Timing, respCh chan<- *types.Response) {
-	var accumulated strings.Builder
-	// Stream the text character by character for consistency with the
-	// existing streaming protocol.
-	for i := 0; i < len(text); i++ {
-		accumulated.WriteString(string(text[i]))
-		respCh <- &types.Response{
-			Role:    "assistant",
-			Content: accumulated.String(),
-			Done:    false,
-		}
-	}
-
 	a.mu.Lock()
 	a.history = append(a.history, types.Message{
 		Role:    "assistant",
-		Content: accumulated.String(),
+		Content: text,
 	})
 	a.mu.Unlock()
 
@@ -222,7 +209,7 @@ func (a *Agent) streamText(ctx context.Context, text string, usage *llm.Usage, t
 
 	respCh <- &types.Response{
 		Role:    "assistant",
-		Content: accumulated.String(),
+		Content: text,
 		Done:    true,
 		Usage:   respUsage,
 		Timing:  respTiming,
