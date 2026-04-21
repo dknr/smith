@@ -329,3 +329,36 @@ func TestExecute_bash_emptyCommand(t *testing.T) {
 		t.Error("expected error for empty command")
 	}
 }
+
+func TestExecute_bash_truncation(t *testing.T) {
+	r := NewRegistry()
+	// Generate 5kB of output.
+	args, err := json.Marshal(map[string]string{"command": "printf '%5000s' "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := r.Execute(context.Background(), "bash", string(args))
+	if err != nil {
+		t.Fatalf("bash truncation: %v", err)
+	}
+	if len(result) >= 5000 {
+		t.Errorf("result should be truncated, got %d bytes", len(result))
+	}
+	if !strings.Contains(result, "[truncated]") {
+		t.Error("result should contain [truncated] marker")
+	}
+}
+
+func TestExecute_bash_timeout(t *testing.T) {
+	r := NewRegistry()
+	// Sleep 5 seconds — should be killed by 1s timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := r.Execute(ctx, "bash", `{"command":"sleep 10"}`)
+	if err == nil {
+		t.Error("expected timeout error for sleep 10")
+	}
+	if !strings.Contains(err.Error(), "context deadline exceeded") && !strings.Contains(err.Error(), "killed") {
+		t.Errorf("expected timeout/killed error, got: %v", err)
+	}
+}

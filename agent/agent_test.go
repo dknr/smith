@@ -517,3 +517,46 @@ func TestReset_withSession(t *testing.T) {
 		t.Errorf("expected empty session after reset, got %d messages", len(h))
 	}
 }
+
+func TestProcessMessage_bashError_providesFeedback(t *testing.T) {
+	a := newFakeAgent("", []types.ToolCall{
+		{ID: "call_1", Name: "bash", Arguments: `{"command":"nonexistent_command_xyz"}`},
+	})
+
+	respCh, err := a.ProcessMessage(context.Background(), "run something")
+	if err != nil {
+		t.Fatalf("ProcessMessage: %v", err)
+	}
+
+	var responses []*types.Response
+	for r := range respCh {
+		responses = append(responses, r)
+	}
+
+	// Should have: tool_call, error (red line), then text response from LLM.
+	if len(responses) < 3 {
+		t.Fatalf("expected at least 3 responses (tool_call + error + text), got %d", len(responses))
+	}
+	if responses[0].Role != "tool_call" {
+		t.Errorf("first response role = %q, want %q", responses[0].Role, "tool_call")
+	}
+	if responses[1].Role != "error" {
+		t.Errorf("second response role = %q, want %q", responses[1].Role, "error")
+	}
+	if !strings.Contains(responses[1].Content, "nonexistent_command_xyz") {
+		t.Errorf("error response should mention the command, got %q", responses[1].Content)
+	}
+
+	// History should contain a user-role message with the error (automatic feedback).
+	h := a.History()
+	userMsgFound := false
+	for _, m := range h {
+		if m.Role == "user" && strings.Contains(m.Content, "nonexistent_command_xyz") {
+			userMsgFound = true
+			break
+		}
+	}
+	if !userMsgFound {
+		t.Error("expected user-role message with bash error in history (automatic feedback)")
+	}
+}

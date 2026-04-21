@@ -163,16 +163,39 @@ func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.Call
 
 		output, err := a.executor.Execute(ctx, tc.Name, tc.Arguments)
 		if err != nil {
-			output = fmt.Sprintf("Error executing %s: %v", tc.Name, err)
+			errMsg := fmt.Sprintf("Error executing %s: %v", tc.Name, err)
+			a.logger.Info("tool error", "turn", turn, "name", tc.Name, "error", err)
+
+			// Bash errors get automatic feedback: red line to client + user message to LLM.
+			if tc.Name == "bash" {
+				respCh <- &types.Response{
+					Role:    "error",
+					Content: errMsg,
+					Done:    true,
+				}
+				a.mu.Lock()
+				a.history = append(a.history, types.Message{Role: "user", Content: errMsg})
+				a.mu.Unlock()
+			} else {
+				a.mu.Lock()
+				a.history = append(a.history, types.Message{
+					Role:   "tool",
+					Content: errMsg,
+					ToolID: tc.ID,
+				})
+				a.mu.Unlock()
+			}
+			toolCount++
+			continue
 		}
 
 		a.logger.Info("tool result", "turn", turn, "name", tc.Name, "chars", len(output), "preview", toolPreview(output))
 
 		a.mu.Lock()
 		a.history = append(a.history, types.Message{
-			Role:    "tool",
+			Role:   "tool",
 			Content: output,
-			ToolID:  tc.ID,
+			ToolID: tc.ID,
 		})
 		a.mu.Unlock()
 		toolCount++
