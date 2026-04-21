@@ -225,6 +225,16 @@ func (a *Agent) History() []types.Message {
 	return h
 }
 
+// SetMode sets the active tool mode for this agent.
+func (a *Agent) SetMode(mode types.Mode) {
+	a.executor.SetMode(mode)
+}
+
+// Mode returns the current tool mode.
+func (a *Agent) Mode() types.Mode {
+	return a.executor.Mode()
+}
+
 // Reset clears all conversation history (in-memory and session), resets the
 // turn sequence, and optionally runs the kickoff message through the agent
 // loop. Returns a response channel to stream kickoff results to the client.

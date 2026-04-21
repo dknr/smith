@@ -12,8 +12,8 @@ import (
 )
 
 // toolLua executes a Lua script in a sandboxed environment.
-// Exposes smith.view(path), smith.list(path), smith.write(path, content),
-// and smith.print(...) for safe file operations and output.
+// Exposes smith.view(path), smith.list(path), and smith.print(...)
+// for read-only file operations and output.
 func toolLua(ctx context.Context, argsJSON string) (string, error) {
 	var p struct {
 		Code string `json:"code"`
@@ -40,8 +40,6 @@ func toolLua(ctx context.Context, argsJSON string) (string, error) {
 	L.SetField(-2, "view")
 	L.PushGoClosure(toolLuaList, 0)
 	L.SetField(-2, "list")
-	L.PushGoClosure(toolLuaWrite, 0)
-	L.SetField(-2, "write")
 	L.PushGoClosure(toolLuaPrint, 0)
 	L.SetField(-2, "print")
 
@@ -130,29 +128,6 @@ func toolLuaList(L *lua.State) int {
 	return 1
 }
 
-// toolLuaWrite implements smith.write(path, content) — write a file.
-func toolLuaWrite(L *lua.State) int {
-	path, ok := L.ToString(1)
-	if !ok || path == "" {
-		L.PushNil()
-		L.PushString("path is required")
-		return 2
-	}
-	content, ok := L.ToString(2)
-	if !ok || content == "" {
-		L.PushNil()
-		L.PushString("content is required")
-		return 2
-	}
-	if err := writeFile(path, content); err != nil {
-		L.PushNil()
-		L.PushString(err.Error())
-		return 2
-	}
-	L.PushBoolean(true)
-	return 1
-}
-
 // toolLuaPrint implements smith.print(...) — collect output.
 func toolLuaPrint(L *lua.State) int {
 	args := make([]string, 0, L.Top())
@@ -206,9 +181,4 @@ func readDir(path string) ([]string, error) {
 		names = append(names, name+suffix)
 	}
 	return names, nil
-}
-
-// writeFile writes content to a file.
-func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
 }

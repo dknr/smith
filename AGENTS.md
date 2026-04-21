@@ -24,6 +24,7 @@ server/server.go     — WebSocket HTTP server; spawns a per-connection Agent
               └── HTTPProvider (llm/http.go) — OpenAI-compatible HTTP client
 
 tools/               — Executable tools: one file per tool (time.go, list.go, view.go, lua.go, edit.go, git.go) + registry (tools.go) + stateful tools (soul.go, memory.go)
+  └── tools.go         — Registry infrastructure, mode system (SafeMode, EditMode, FullMode), toolDefs map
 memory/memory.go     — In-memory SQLite store for soul (identity) and memories (learnings)
 session/session.go   — In-memory SQLite persistence of conversation history
 types/message.go     — Message, Request, Response, ToolDef, ToolCall structs + JSON marshaling
@@ -37,7 +38,8 @@ logging/logging.go   — Dual-output slog setup (file + stdout)
 ## Key patterns
 
 - **Provider interface** (`llm/provider.go`): All LLM backends implement `Complete(ctx, msgs) (<-chan string, error)` for streaming and `Call(ctx, msgs, tools) (CallResult, error)` for structured/one-shot calls. `CallResult` includes `Usage` and `Timing` parsed from the provider's JSON response body.
-- **Tool registry** (`tools/tools.go`): Core `Registry` struct with `Definitions()` (returns tool definitions for the LLM) and `Execute()` (dispatches by name). Built-in tool implementations live in separate files (`time.go`, `list.go`, `view.go`, `git.go`, `lua.go`, `edit.go`); their `ToolDef` entries are in `toolDefs` in `tools.go`. New built-in tools are added by creating a new file with a `toolXxx()` function and registering it in `NewRegistry()`. Stateful tools (soul, memory) are registered via `RegisterFn()`.
+- **Tool registry** (`tools/tools.go`): Core `Registry` struct with `Definitions()` (returns tool definitions filtered by current mode), `Execute()` (dispatches by name), `SetMode()`, and `Mode()`. Built-in tool implementations live in separate files (`time.go`, `list.go`, `view.go`, `git.go`, `lua.go`, `edit.go`); their `ToolDef` entries are in `toolDefs` in `tools.go`. New built-in tools are added by creating a new file with a `toolXxx()` function and registering it in `NewRegistry()`. Stateful tools (soul, memory) are registered via `RegisterFn()`.
+- **Tool modes**: Three modes control which tools are available to the LLM. `safe` (default): `time`, `list`, `view`, `lua`, `soul`, `memory`. `edit`: adds `git` and `edit`. `full`: includes all tools (expandable). Modes are set via `/safe`, `/edit`, `/full` slash commands in the chat client, or via the `mode` field in `Request`. The server intercepts these commands before the agent loop — they never appear in conversation history. `/mode` shows the current mode. Mode changes are sent to the client as `Response` objects with `command: "mode_change"`.
 - **Soul**: Plain text identity stored in the agent's SQLite store. The agent reads it via the `soul` tool on kickoff and can modify it freely. No schema — just text.
 - **Memory**: Structured learnings stored in the agent's SQLite store. Categories: lesson, pattern, preference, fact, mistake, context. Accessed via the `memory` tool.
 - **Kickoff**: Configured in `smith.toml` as `kickoff`. On new sessions, the server sends the kickoff as the first user message, flows through the agent loop (tool calls, text), then the client displays "New session" + kickoff text.
@@ -48,6 +50,30 @@ logging/logging.go   — Dual-output slog setup (file + stdout)
 - **Error responses**: Provider errors use `Role: "error"` (not `"assistant"`), enabling the client to distinguish them from LLM content.
 - **Client modes**: `Chat` colorizes tool calls (yellow), errors (red), and shows a grey stats line (`HH:MM:SS | X (Y/s) => Z (W/s) => N (T.s)`). `Send` suppresses tool calls and stats, printing only the final response.
 - **New sessions**: On first connect, chat prints a grey `"HH:MM:SS | New session"` banner, then the kickoff text (if configured), then the agent's kickoff response.
+
+## Tool Modes
+
+Tool modes control which tools are available to the LLM. Modes are enforced server-side — the LLM only sees tool definitions matching the current mode.
+
+| Mode  | Tools Available                                              |
+|-------|-------------------------------------------------------------|
+| `safe`  | `time`, `list`, `view`, `lua`, `soul`, `memory` (lua sandbox is read-only) |
+| `edit`  | safe + `git`, `edit`                                       |
+| `full`  | edit + all future tools (e.g., `bash`)                     |
+
+### Commands
+
+In the chat client (`smith chat`), use slash commands to switch modes:
+
+```
+/safe    → set mode to safe
+/edit    → set mode to edit
+/full    → set mode to full
+/mode    → show current mode
+/help    → list all available commands
+```
+
+Mode changes are displayed as grey text. Commands are intercepted by the server and never appear in conversation history.
 
 ## Testing
 

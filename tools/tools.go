@@ -19,20 +19,30 @@ type Registry struct {
 	tools   map[string]toolFunc
 	defs    []types.ToolDef
 	defMap  map[string]types.ToolDef
+	mode    types.Mode
 }
 
 type toolFunc func(ctx context.Context, argsJSON string) (string, error)
 
-// Definitions returns the tool definitions for the LLM.
+// Definitions returns the tool definitions for the LLM, filtered by the current mode.
 func (r *Registry) Definitions() []types.ToolDef {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	defs := make([]types.ToolDef, 0, len(r.tools))
-	for _, def := range toolDefs {
-		defs = append(defs, def)
+	mode := r.mode
+	if mode == "" {
+		mode = types.SafeMode
+	}
+	builtins := modeTools[mode]
+	defs := make([]types.ToolDef, 0, len(builtins))
+	for name := range builtins {
+		if def, ok := r.defMap[name]; ok {
+			defs = append(defs, def)
+		}
 	}
 	for _, def := range r.defs {
-		defs = append(defs, def)
+		if builtins[def.Name] {
+			defs = append(defs, def)
+		}
 	}
 	return defs
 }
@@ -46,11 +56,29 @@ func (r *Registry) Execute(ctx context.Context, name, argsJSON string) (string, 
 	return fn(ctx, argsJSON)
 }
 
+// SetMode sets the active tool mode.
+func (r *Registry) SetMode(mode types.Mode) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.mode = mode
+}
+
+// Mode returns the current tool mode.
+func (r *Registry) Mode() types.Mode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.mode == "" {
+		return types.SafeMode
+	}
+	return r.mode
+}
+
 // NewRegistry creates a Registry with the built-in tools registered.
 func NewRegistry() *Registry {
 	r := &Registry{
 		tools:  make(map[string]toolFunc),
 		defMap: make(map[string]types.ToolDef),
+		mode:   types.SafeMode,
 	}
 	for name, def := range toolDefs {
 		r.defMap[name] = def
@@ -130,7 +158,7 @@ var toolDefs = map[string]types.ToolDef{
 	},
 	"lua": {
 		Name:        "lua",
-		Description: "Execute a Lua script in a sandboxed environment. Exposes string operations and smith.view(path), smith.list(path), smith.write(path, content), and smith.print(...) for file operations and output.",
+		Description: "Execute a Lua script in a sandboxed environment. Exposes string operations and smith.view(path), smith.list(path), and smith.print(...) for read-only file operations and output.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -181,5 +209,37 @@ var toolDefs = map[string]types.ToolDef{
 			},
 			"required": []string{"file_path", "old_string", "new_string"},
 		},
+	},
+}
+
+// modeTools maps each mode to the set of tool names available in that mode.
+var modeTools = map[types.Mode]map[string]bool{
+	types.SafeMode: {
+		"time":  true,
+		"list":  true,
+		"view":  true,
+		"lua":   true,
+		"soul":  true,
+		"memory": true,
+	},
+	types.EditMode: {
+		"time":  true,
+		"list":  true,
+		"view":  true,
+		"lua":   true,
+		"soul":  true,
+		"memory": true,
+		"git":   true,
+		"edit":  true,
+	},
+	types.FullMode: {
+		"time":  true,
+		"list":  true,
+		"view":  true,
+		"lua":   true,
+		"soul":  true,
+		"memory": true,
+		"git":   true,
+		"edit":  true,
 	},
 }

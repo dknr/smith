@@ -118,6 +118,14 @@ func printNewSession() {
 // renderResponse prints a single Response using the standard format.
 // Used by both syncSession and readLoop for consistent display.
 func renderResponse(r *types.Response, colorize bool) {
+	if r.Command == "mode_change" {
+		if colorize {
+			fmt.Printf("\033[90m%s\033[0m\n", r.Content)
+		} else {
+			fmt.Println(r.Content)
+		}
+		return
+	}
 	if r.Role == "tool_call" {
 		if colorize {
 			fmt.Printf("\033[33m%s\033[0m\n", r.Content)
@@ -256,6 +264,13 @@ func Chat(addr string, logger *slog.Logger) error {
 			}
 			continue
 		}
+		if strings.HasPrefix(strings.TrimSpace(input), "/") {
+			if err := sendCommand(conn, logger, input); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				break
+			}
+			continue
+		}
 		if strings.TrimSpace(input) == "" {
 			continue
 		}
@@ -286,6 +301,37 @@ func Chat(addr string, logger *slog.Logger) error {
 	}
 
 	return nil
+}
+
+// sendCommand sends a slash command to the server and renders the response.
+func sendCommand(conn *websocket.Conn, logger *slog.Logger, input string) error {
+	req := types.Request{
+		ID:      "0",
+		Role:    "user",
+		Content: strings.TrimSpace(input),
+	}
+	data, err := types.MarshalRequest(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal command: %w", err)
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		return fmt.Errorf("failed to send command: %w", err)
+	}
+
+	for {
+		_, resp, err := conn.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("failed to read command response: %w", err)
+		}
+		r, err := types.UnmarshalResponse(resp)
+		if err != nil {
+			return fmt.Errorf("failed to parse command response: %w", err)
+		}
+		renderResponse(r, true)
+		if r.Done {
+			return nil
+		}
+	}
 }
 
 // sendReset sends a reset request to the server, prints "New session",

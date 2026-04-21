@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -130,6 +132,16 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				continue
 			}
 
+			if req.Mode != "" {
+				handleModeCommand(conn, req.ID, req.Mode, a, logger)
+				continue
+			}
+
+			if strings.HasPrefix(req.Content, "/") {
+				handleSlashCommand(conn, req.ID, req.Content, a, logger)
+				continue
+			}
+
 			logger.Info("message", "id", req.ID, "content", req.Content)
 
 			respCh, err := a.ProcessMessage(r.Context(), req.Content)
@@ -182,6 +194,111 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 
 	logger.Info("starting websocket server", "addr", addr)
 	return srv.ListenAndServe()
+}
+
+func handleSlashCommand(conn *websocket.Conn, id string, content string, a *agent.Agent, logger *slog.Logger) {
+	switch content {
+	case "/safe":
+		a.SetMode(types.SafeMode)
+		logger.Info("mode changed", "mode", "safe")
+		resp := types.Response{
+			ID:      id,
+			Role:    "assistant",
+			Content: "Mode set to safe.",
+			Done:    true,
+			Command: "mode_change",
+		}
+		sendResponse(conn, resp, logger)
+	case "/edit":
+		a.SetMode(types.EditMode)
+		logger.Info("mode changed", "mode", "edit")
+		resp := types.Response{
+			ID:      id,
+			Role:    "assistant",
+			Content: "Mode set to edit.",
+			Done:    true,
+			Command: "mode_change",
+		}
+		sendResponse(conn, resp, logger)
+	case "/full":
+		a.SetMode(types.FullMode)
+		logger.Info("mode changed", "mode", "full")
+		resp := types.Response{
+			ID:      id,
+			Role:    "assistant",
+			Content: "Mode set to full.",
+			Done:    true,
+			Command: "mode_change",
+		}
+		sendResponse(conn, resp, logger)
+	case "/mode":
+		resp := types.Response{
+			ID:      id,
+			Role:    "assistant",
+			Content: fmt.Sprintf("Current mode: %s.", a.Mode()),
+			Done:    true,
+			Command: "mode_change",
+		}
+		sendResponse(conn, resp, logger)
+	case "/help":
+		resp := types.Response{
+			ID:      id,
+			Role:    "assistant",
+			Content: "Available commands: /safe, /edit, /full, /mode, /help, /reset, /clear, /quit",
+			Done:    true,
+			Command: "mode_change",
+		}
+		sendResponse(conn, resp, logger)
+	default:
+		resp := types.Response{
+			ID:      id,
+			Role:    "error",
+			Content: fmt.Sprintf("Unknown command: %s. Type /help for available commands.", content),
+			Done:    true,
+		}
+		sendResponse(conn, resp, logger)
+	}
+}
+
+func sendResponse(conn *websocket.Conn, resp types.Response, logger *slog.Logger) {
+	data, err := types.MarshalResponse(resp)
+	if err != nil {
+		logger.Error("failed to marshal response", "error", err)
+		return
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		logger.Error("failed to write response", "error", err)
+	}
+}
+
+func handleModeCommand(conn *websocket.Conn, id string, mode types.Mode, a *agent.Agent, logger *slog.Logger) {
+	modeNames := map[types.Mode]string{
+		types.SafeMode:  "safe",
+		types.EditMode:  "edit",
+		types.FullMode:  "full",
+	}
+	switch mode {
+	case types.SafeMode, types.EditMode, types.FullMode:
+		a.SetMode(mode)
+		logger.Info("mode changed", "mode", modeNames[mode])
+		resp := types.Response{
+			ID:      id,
+			Role:    "assistant",
+			Content: fmt.Sprintf("Mode set to %s.", modeNames[mode]),
+			Done:    true,
+			Command: "mode_change",
+		}
+		sendResponse(conn, resp, logger)
+	default:
+		resp := types.Response{
+			ID:      id,
+			Role:    "assistant",
+			Content: fmt.Sprintf("Current mode: %s.", a.Mode()),
+			Done:    true,
+			Command: "mode_change",
+		}
+		sendResponse(conn, resp, logger)
+	}
 }
 
 func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger, agentLogger *slog.Logger, memStore *memory.Store, kickoff string) {

@@ -41,6 +41,15 @@ func (t ToolDef) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// Mode represents the active tool mode for a session.
+type Mode string
+
+const (
+	SafeMode  Mode = "safe"
+	EditMode  Mode = "edit"
+	FullMode  Mode = "full"
+)
+
 // Request represents a message from the client to the server.
 type Request struct {
 	ID      string `json:"id"`
@@ -48,6 +57,7 @@ type Request struct {
 	Content string `json:"content"`
 	Sync    bool   `json:"sync"`
 	Reset   bool   `json:"reset"`
+	Mode    Mode   `json:"mode,omitempty"`
 }
 
 // Response represents a message from the server to the client.
@@ -62,6 +72,7 @@ type Response struct {
 	Kickoff      string          `json:"kickoff,omitempty"`
 	Usage        *ResponseUsage  `json:"usage,omitempty"`
 	Timing       *ResponseTiming `json:"timing,omitempty"`
+	Command      string          `json:"command,omitempty"` // Server-only command (e.g., "mode_change")
 }
 
 // ResponseUsage holds token usage information.
