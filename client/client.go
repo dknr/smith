@@ -365,7 +365,7 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 		}
 
 		// Print "New session" banner once on first assistant chunk.
-		if r.Role == "assistant" && !r.Done && colorize && !bannerPrinted {
+		if r.Role == "assistant" && colorize && !bannerPrinted {
 			printNewSession()
 			bannerPrinted = true
 		}
@@ -383,6 +383,10 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 
 		// Assistant: delta printing (skip done response — already printed).
 		if r.Done {
+			// For batch responses, print any remaining content.
+			if len(r.Content) > len(lastContent) {
+				fmt.Print(r.Content[len(lastContent):])
+			}
 			fmt.Println()
 			if r.Reset && colorize && (r.Usage != nil || r.Timing != nil) {
 				printStatsLine(r.Usage, r.Timing)
