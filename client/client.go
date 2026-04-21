@@ -257,7 +257,7 @@ func Chat(addr string, logger *slog.Logger) error {
 			logger.Debug("quit command received, exiting")
 			break
 		}
-		if strings.TrimSpace(input) == "/reset" || strings.TrimSpace(input) == "/clear" {
+		if strings.TrimSpace(input) == "/reset" {
 			if err := sendReset(conn, logger, true); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				break
