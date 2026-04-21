@@ -62,15 +62,15 @@ func TestRegistry_Definitions_FullMode(t *testing.T) {
 	r := NewRegistry()
 	r.SetMode("full")
 	defs := r.Definitions()
-	if len(defs) != 6 {
-		t.Fatalf("expected 6 tool definitions in full mode, got %d", len(defs))
+	if len(defs) != 7 {
+		t.Fatalf("expected 7 tool definitions in full mode, got %d", len(defs))
 	}
 
 	names := make(map[string]bool)
 	for _, d := range defs {
 		names[d.Name] = true
 	}
-	for _, want := range []string{"time", "list", "view", "lua", "git", "edit"} {
+	for _, want := range []string{"time", "list", "view", "lua", "git", "edit", "bash"} {
 		if !names[want] {
 			t.Errorf("missing tool definition: %s", want)
 		}
@@ -289,5 +289,43 @@ func TestExecute_lua_list(t *testing.T) {
 	n, _ := strconv.Atoi(result)
 	if n < 1 {
 		t.Errorf("list returned count %d, expected >= 1", n)
+	}
+}
+
+func TestExecute_bash_basic(t *testing.T) {
+	r := NewRegistry()
+	result, err := r.Execute(context.Background(), "bash", `{"command":"echo hello"}`)
+	if err != nil {
+		t.Fatalf("bash: %v", err)
+	}
+	if !strings.Contains(result, "hello") {
+		t.Errorf("result = %q, want to contain 'hello'", result)
+	}
+}
+
+func TestExecute_bash_pwd(t *testing.T) {
+	r := NewRegistry()
+	result, err := r.Execute(context.Background(), "bash", `{"command":"pwd"}`)
+	if err != nil {
+		t.Fatalf("bash pwd: %v", err)
+	}
+	if !strings.Contains(result, "smith") {
+		t.Errorf("result = %q, want to contain 'smith'", result)
+	}
+}
+
+func TestExecute_bash_missingCommand(t *testing.T) {
+	r := NewRegistry()
+	_, err := r.Execute(context.Background(), "bash", `{}`)
+	if err == nil {
+		t.Error("expected error for missing command")
+	}
+}
+
+func TestExecute_bash_emptyCommand(t *testing.T) {
+	r := NewRegistry()
+	_, err := r.Execute(context.Background(), "bash", `{"command":""}`)
+	if err == nil {
+		t.Error("expected error for empty command")
 	}
 }

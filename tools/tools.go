@@ -89,6 +89,7 @@ func NewRegistry() *Registry {
 	r.register("lua", toolLua)
 	r.register("edit", toolEdit)
 	r.register("git", toolGit)
+	r.register("bash", toolBash)
 	return r
 }
 
@@ -210,6 +211,20 @@ var toolDefs = map[string]types.ToolDef{
 			"required": []string{"file_path", "old_string", "new_string"},
 		},
 	},
+	"bash": {
+		Name:        "bash",
+		Description: "Execute any shell command.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"command": map[string]interface{}{
+					"type":        "string",
+					"description": "Shell command to execute",
+				},
+			},
+			"required": []string{"command"},
+		},
+	},
 }
 
 // modeTools maps each mode to the set of tool names available in that mode.
@@ -241,5 +256,6 @@ var modeTools = map[types.Mode]map[string]bool{
 		"memory": true,
 		"git":   true,
 		"edit":  true,
+		"bash":  true,
 	},
 }
