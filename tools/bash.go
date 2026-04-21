@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strings"
+	"time"
 )
 
 const maxBashOutput = 4096
@@ -21,18 +21,13 @@ func toolBash(ctx context.Context, argsJSON string) (string, error) {
 		return "", fmt.Errorf("command is required")
 	}
 
-	parts := strings.Fields(p.Command)
-	if len(parts) == 0 {
-		return "", fmt.Errorf("empty command")
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 1000000000) // 1 second
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	cmd := exec.CommandContext(ctx, "bash", "-c", p.Command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("bash %s failed: %w%s", parts[0], err, string(output))
+		return "", fmt.Errorf("bash failed: %s%s", err, output)
 	}
 
 	// Truncate output to 4kB.

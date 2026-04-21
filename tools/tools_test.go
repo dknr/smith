@@ -30,6 +30,10 @@ func TestRegistry_Definitions(t *testing.T) {
 			t.Errorf("missing tool definition: %s", want)
 		}
 	}
+	// bash should not be in safe mode
+	if names["bash"] {
+		t.Error("bash should not be in safe mode")
+	}
 	// edit and git should not be in safe mode
 	if names["edit"] {
 		t.Error("edit should not be in safe mode")
