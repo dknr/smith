@@ -91,13 +91,22 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 		turn := a.turnSeq.Add(1)
 		a.logger.Info("turn", "turn", turn, "content", content)
 
-		// Loop: call provider, handle tool calls or stream text.
+	// Loop: call provider, handle tool calls or stream text.
+		const maxCalls = 50
 		var toolCount int
 		var callCount int
 		var outputTokens int
 		start := time.Now()
 		for {
 			callCount++
+			if callCount > maxCalls {
+				respCh <- &types.Response{
+					Role:    "error",
+					Content: fmt.Sprintf("Agent exceeded maximum tool calls (%d).", maxCalls),
+					Done:    true,
+				}
+				return
+			}
 			result, err := a.provider.Call(ctx, a.history, a.executor.Definitions())
 			if err != nil {
 				a.logger.Error("provider error", "error", err)
@@ -171,7 +180,7 @@ func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.Call
 				respCh <- &types.Response{
 					Role:    "error",
 					Content: errMsg,
-					Done:    true,
+					Done:    false,
 				}
 				a.mu.Lock()
 				a.history = append(a.history, types.Message{Role: "user", Content: errMsg})
