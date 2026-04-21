@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,6 +73,91 @@ func toolPreview(output string) string {
 		return output
 	}
 	return output[:30] + "…"
+}
+
+// compactPrompt is the default prompt used when summarizing a session for /compact.
+const compactPrompt = "Condense the following conversation into a summary. Preserve facts, decisions, and tool outcomes that may be relevant later. Discard formatting artifacts and redundant output."
+
+// Compact prompts the LLM to summarize the current session, archives the current
+// session, creates a new one with the summary as its first message, and returns
+// the summary via a response channel. If the provider call fails, the current
+// session is left intact.
+func (a *Agent) Compact(ctx context.Context) (<-chan *types.Response, error) {
+	ch := make(chan *types.Response, 1)
+
+	// Build transcript from current history (under lock to avoid data race).
+	a.mu.Lock()
+	transcript := buildTranscript(a.history)
+	a.mu.Unlock()
+
+	// Call provider one-shot to summarize (no tools).
+	result, err := a.provider.Call(ctx, []types.Message{
+		{Role: "system", Content: compactPrompt},
+		{Role: "user", Content: "Summarize the following conversation:\n\n" + transcript},
+	}, nil)
+	if err != nil {
+		a.logger.Error("compact provider error", "error", err)
+		ch <- &types.Response{
+			Role:    "error",
+			Content: err.Error(),
+			Done:    true,
+		}
+		close(ch)
+		return ch, nil
+	}
+
+	// Archive current session and create a new one.
+	if a.session != nil {
+		if _, err := a.session.ArchiveCurrent(); err != nil {
+			a.logger.Error("failed to archive session during compact", "error", err)
+			ch <- &types.Response{
+				Role:    "error",
+				Content: fmt.Sprintf("Failed to archive session: %v", err),
+				Done:    true,
+			}
+			close(ch)
+			return ch, nil
+		}
+	}
+
+	// Insert summary as the first message of the new session.
+	summary := result.Text
+	a.mu.Lock()
+	a.history = []types.Message{{Role: "assistant", Content: summary}}
+	a.mu.Unlock()
+
+	if a.session != nil {
+		if err := a.session.Append(types.Message{Role: "assistant", Content: summary}); err != nil {
+			a.logger.Error("failed to save compact summary", "error", err)
+		}
+	}
+
+	ch <- &types.Response{
+		Role:    "assistant",
+		Content: summary,
+		Done:    true,
+	}
+	close(ch)
+	return ch, nil
+}
+
+// buildTranscript formats conversation history as a markdown transcript with
+// ## role headings for display during session compaction.
+func buildTranscript(messages []types.Message) string {
+	var sb strings.Builder
+	for _, m := range messages {
+		sb.WriteString(fmt.Sprintf("## %s\n", m.Role))
+		if len(m.ToolCalls) > 0 {
+			for _, tc := range m.ToolCalls {
+				sb.WriteString(fmt.Sprintf("%s(%s)\n", tc.Name, tc.Arguments))
+			}
+		}
+		if m.Content != "" {
+			sb.WriteString(m.Content)
+		}
+		sb.WriteString("\n\n")
+	}
+	return sb.String()
 }
 
 // ProcessMessage appends a user message to history, sends it to the provider

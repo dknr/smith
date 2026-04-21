@@ -564,3 +564,177 @@ func TestProcessMessage_bashError_providesFeedback(t *testing.T) {
 		t.Error("expected user-role message with bash error in history (automatic feedback)")
 	}
 }
+
+func TestCompact_success(t *testing.T) {
+	sess, _ := session.New()
+	defer sess.Close()
+
+	a := New(&fakeProvider{callText: "You are an AI assistant."}, tools.NewRegistry(), sess, slog.Default(), nil)
+
+	// Build history (each ProcessMessage adds user + assistant = 2 messages).
+	respCh, _ := a.ProcessMessage(context.Background(), "question")
+	for range respCh {}
+
+	h := a.History()
+	if len(h) != 2 {
+		t.Fatalf("expected 2 messages before compact, got %d", len(h))
+	}
+
+	// Compact.
+	respCh, err := a.Compact(context.Background())
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	var responses []*types.Response
+	for r := range respCh {
+		responses = append(responses, r)
+	}
+
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 response, got %d", len(responses))
+	}
+	if responses[0].Role != "assistant" {
+		t.Errorf("response role = %q, want %q", responses[0].Role, "assistant")
+	}
+	if !responses[0].Done {
+		t.Error("expected done=true")
+	}
+	if responses[0].Content != "You are an AI assistant." {
+		t.Errorf("response content = %q, want %q", responses[0].Content, "You are an AI assistant.")
+	}
+
+	// History should now contain only the summary.
+	h = a.History()
+	if len(h) != 1 {
+		t.Fatalf("expected 1 message after compact, got %d", len(h))
+	}
+	if h[0].Role != "assistant" || h[0].Content != "You are an AI assistant." {
+		t.Errorf("history[0] = %+v, want {assistant, summary}", h[0])
+	}
+
+	// Session should have the summary saved.
+	saved, err := sess.LoadHistory()
+	if err != nil {
+		t.Fatalf("LoadHistory: %v", err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("expected 1 message in session after compact, got %d", len(saved))
+	}
+	if saved[0].Role != "assistant" {
+		t.Errorf("session message[0] role = %q, want %q", saved[0].Role, "assistant")
+	}
+}
+
+func TestCompact_failure(t *testing.T) {
+	sess, _ := session.New()
+	defer sess.Close()
+
+	a := New(&fakeProvider{callErr: fmt.Errorf("api error")}, tools.NewRegistry(), sess, slog.Default(), nil)
+
+	// Build history.
+	respCh, _ := a.ProcessMessage(context.Background(), "question")
+	for range respCh {}
+
+	// Compact should fail but leave session intact.
+	respCh, err := a.Compact(context.Background())
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	var responses []*types.Response
+	for r := range respCh {
+		responses = append(responses, r)
+	}
+
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 response, got %d", len(responses))
+	}
+	if responses[0].Role != "error" {
+		t.Errorf("response role = %q, want %q", responses[0].Role, "error")
+	}
+	if !strings.Contains(responses[0].Content, "api error") {
+		t.Errorf("error content should mention the error, got %q", responses[0].Content)
+	}
+
+	// History should be unchanged (1 message: user only, no assistant on error).
+	h := a.History()
+	if len(h) != 1 {
+		t.Fatalf("expected 1 message (unchanged), got %d", len(h))
+	}
+	if h[0].Role != "user" || h[0].Content != "question" {
+		t.Errorf("history[0] = %+v, want {user, question}", h[0])
+	}
+
+	// Session should be unchanged (no messages saved on provider error).
+	saved, err := sess.LoadHistory()
+	if err != nil {
+		t.Fatalf("LoadHistory: %v", err)
+	}
+	if len(saved) != 0 {
+		t.Fatalf("expected 0 messages in session (none saved on error), got %d", len(saved))
+	}
+}
+
+func TestCompact_emptyHistory(t *testing.T) {
+	sess, _ := session.New()
+	defer sess.Close()
+
+	a := New(&fakeProvider{callText: "empty session summary"}, tools.NewRegistry(), sess, slog.Default(), nil)
+
+	// Compact with no history.
+	respCh, err := a.Compact(context.Background())
+	if err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	var responses []*types.Response
+	for r := range respCh {
+		responses = append(responses, r)
+	}
+
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 response, got %d", len(responses))
+	}
+	if responses[0].Role != "assistant" || responses[0].Content != "empty session summary" {
+		t.Errorf("response = %+v", responses[0])
+	}
+}
+
+func TestBuildTranscript_basic(t *testing.T) {
+	msgs := []types.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi there"},
+	}
+	got := buildTranscript(msgs)
+	want := "## user\nhello\n\n## assistant\nhi there\n\n"
+	if got != want {
+		t.Errorf("buildTranscript() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildTranscript_withToolCalls(t *testing.T) {
+	msgs := []types.Message{
+		{Role: "user", Content: "list files"},
+		{Role: "assistant", ToolCalls: []types.ToolCall{{ID: "c1", Name: "list", Arguments: `{"path":"."}`}}},
+		{Role: "tool", Content: "file1.go\nfile2.go", ToolID: "c1"},
+		{Role: "assistant", Content: "done"},
+	}
+	got := buildTranscript(msgs)
+	if !strings.Contains(got, "## user") || !strings.Contains(got, "## assistant") || !strings.Contains(got, "## tool") {
+		t.Errorf("missing role headings in transcript: %q", got)
+	}
+	if !strings.Contains(got, "list({\"path\":\".\"})") {
+		t.Errorf("missing tool call in transcript: %q", got)
+	}
+	if !strings.Contains(got, "file1.go") {
+		t.Errorf("missing tool result in transcript: %q", got)
+	}
+}
+
+func TestBuildTranscript_empty(t *testing.T) {
+	got := buildTranscript(nil)
+	if got != "" {
+		t.Errorf("buildTranscript(nil) = %q, want empty string", got)
+	}
+}

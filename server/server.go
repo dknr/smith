@@ -142,6 +142,28 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				continue
 			}
 
+			if req.Content == "/compact" {
+				logger.Info("session compact requested")
+				respCh, err := a.Compact(r.Context())
+				if err != nil {
+					logger.Error("compact error", "error", err)
+					continue
+				}
+				for resp := range respCh {
+					resp.ID = req.ID
+					data, err := types.MarshalResponse(*resp)
+					if err != nil {
+						logger.Error("failed to marshal compact response", "error", err)
+						break
+					}
+					if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+						logger.Error("failed to write compact response", "error", err)
+						break
+					}
+				}
+				continue
+			}
+
 			if strings.HasPrefix(req.Content, "/") {
 				handleSlashCommand(conn, req.ID, req.Content, a, logger)
 				continue
