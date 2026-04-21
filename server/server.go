@@ -109,6 +109,11 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 
 			if req.Reset {
 				logger.Info("session reset requested")
+				if a.Session() != nil {
+					if _, err := a.Session().ArchiveCurrent(); err != nil {
+						logger.Error("failed to archive session", "error", err)
+					}
+				}
 				respCh, err := a.Reset(r.Context(), cfg.Kickoff)
 				if err != nil {
 					logger.Error("reset error", "error", err)

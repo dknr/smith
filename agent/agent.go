@@ -267,7 +267,12 @@ func (a *Agent) Mode() types.Mode {
 	return a.executor.Mode()
 }
 
-// Reset clears all conversation history (in-memory and session), resets the
+// Session returns the session store for this agent.
+func (a *Agent) Session() *session.Session {
+	return a.session
+}
+
+// Reset clears all conversation history (in-memory), resets the
 // turn sequence, and optionally runs the kickoff message through the agent
 // loop. Returns a response channel to stream kickoff results to the client.
 func (a *Agent) Reset(ctx context.Context, kickoff string) (<-chan *types.Response, error) {
@@ -275,13 +280,6 @@ func (a *Agent) Reset(ctx context.Context, kickoff string) (<-chan *types.Respon
 	a.mu.Lock()
 	a.history = nil
 	a.mu.Unlock()
-
-	// Clear session database.
-	if a.session != nil {
-		if err := a.session.Clear(); err != nil {
-			return nil, fmt.Errorf("failed to clear session: %w", err)
-		}
-	}
 
 	// Reset turn sequence.
 	a.turnSeq.Store(0)

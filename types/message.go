@@ -12,6 +12,7 @@ type Message struct {
 	Content   string     `json:"content"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	ToolID    string     `json:"tool_call_id,omitempty"`
+	SessionID int64      `json:"session_id,omitempty"`
 }
 
 // ToolCall represents a tool invocation from an LLM response.

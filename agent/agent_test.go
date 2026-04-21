@@ -500,7 +500,11 @@ func TestReset_withSession(t *testing.T) {
 		t.Fatalf("expected 2 messages in session before reset, got %d", len(h))
 	}
 
-	// Reset.
+	// Reset: archive the old session and create a new one (simulates server behavior).
+	_, err = sess.ArchiveCurrent()
+	if err != nil {
+		t.Fatalf("ArchiveCurrent: %v", err)
+	}
 	respCh, err = a.Reset(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
@@ -508,13 +512,13 @@ func TestReset_withSession(t *testing.T) {
 	for range respCh {
 	}
 
-	// Session should be cleared.
+	// Old session should be archived; new session should be empty.
 	h, err = sess.LoadHistory()
 	if err != nil {
 		t.Fatalf("LoadHistory after reset: %v", err)
 	}
 	if len(h) != 0 {
-		t.Errorf("expected empty session after reset, got %d messages", len(h))
+		t.Errorf("expected empty active session after reset, got %d messages", len(h))
 	}
 }
 
