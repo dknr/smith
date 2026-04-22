@@ -145,7 +145,7 @@ var toolDefs = map[string]types.ToolDef{
 	},
 	"view": {
 		Name:        "view",
-		Description: "Read the contents of a file.",
+		Description: "Read the contents of a file. Output is truncated to 4kB with [truncated] marker if exceeded.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

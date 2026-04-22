@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const maxBashOutput = 4096
+const maxBashOutput = 16384
 
 func toolBash(ctx context.Context, argsJSON string) (string, error) {
 	var p struct {

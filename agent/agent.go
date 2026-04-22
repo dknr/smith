@@ -132,6 +132,15 @@ func (a *Agent) Compact(ctx context.Context) (<-chan *types.Response, error) {
 		}
 	}
 
+	// Save summary to long-term memory for future reference
+	if a.memStore != nil {
+		tags := "summary,auto-generated," + time.Now().Format("2006-01-02")
+		_, err := a.memStore.Add(summary, "context", tags)
+		if err != nil {
+			a.logger.Error("failed to save compact summary to memory", "error", err)
+		}
+	}
+
 	ch <- &types.Response{
 		Role:    "assistant",
 		Content: summary,

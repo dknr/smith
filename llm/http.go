@@ -26,7 +26,7 @@ type HTTPProvider struct {
 }
 
 // defaultTimeout is the HTTP client timeout for provider requests.
-const defaultTimeout = 60 * time.Second
+const defaultTimeout = 5 * 60 * time.Second
 
 // logDebug writes a request/response pair to the debug logger.
 func (p *HTTPProvider) logDebug(ctx context.Context, method, url string, reqBody, respBody interface{}) {

@@ -26,6 +26,14 @@ CREATE TABLE IF NOT EXISTS messages (
 	tool_call_id TEXT DEFAULT NULL,
 	session_id INTEGER
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+	role,
+	content,
+	tool_calls,
+	content='messages',
+	content_rowid='id'
+);
 `
 
 const createSessionTableSQL = `
@@ -34,6 +42,26 @@ CREATE TABLE IF NOT EXISTS sessions (
 	archived INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL
 );
+`
+
+// FTS triggers to keep the search index in sync.
+const ftsTriggersSQL = `
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+	INSERT INTO messages_fts(rowid, role, content, tool_calls)
+	VALUES (new.id, new.role, new.content, new.tool_calls);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+	INSERT INTO messages_fts(messages_fts, rowid, role, content, tool_calls)
+	VALUES ('delete', old.id, old.role, old.content, old.tool_calls);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+	INSERT INTO messages_fts(messages_fts, rowid, role, content, tool_calls)
+	VALUES ('delete', old.id, old.role, old.content, old.tool_calls);
+	INSERT INTO messages_fts(rowid, role, content, tool_calls)
+	VALUES (new.id, new.role, new.content, new.tool_calls);
+END;
 `
 
 // New creates a new in-memory session and initializes the database.
@@ -81,6 +109,12 @@ func NewWithDB(dbPath string) (*Session, error) {
 	if err := conn.Exec(createSessionTableSQL); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to create sessions table: %w", err)
+	}
+
+	// Create FTS triggers for search index.
+	if err := conn.Exec(ftsTriggersSQL); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to create FTS triggers: %w", err)
 	}
 
 	// Migrate: ensure there is at least one active session.
@@ -231,6 +265,59 @@ func (s *Session) ArchiveCurrent() (int64, error) {
 
 	s.activeSessionID = newID
 	return newID, nil
+}
+
+// Search performs a full-text search across archived sessions.
+// It returns messages matching the query, ordered by relevance.
+func (s *Session) Search(query string, limit int) ([]types.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if limit <= 0 {
+		limit = 10
+	}
+
+	stmt, _, err := s.conn.Prepare(`
+		SELECT m.role, m.content, m.tool_calls, m.tool_call_id, m.session_id
+		FROM messages_fts f
+		JOIN messages m ON m.id = f.rowid
+		WHERE messages_fts MATCH ?
+		AND m.session_id IN (
+			SELECT id FROM sessions WHERE archived = 1
+		)
+		ORDER BY rank
+		LIMIT ?
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare search query: %w", err)
+	}
+	defer stmt.Close()
+
+	stmt.BindText(1, query)
+	stmt.BindInt(2, limit)
+
+	var messages []types.Message
+	for stmt.Step() {
+		msg := types.Message{
+			Role:    stmt.ColumnText(0),
+			Content: stmt.ColumnText(1),
+		}
+		toolCallsText := stmt.ColumnText(2)
+		if toolCallsText != "" {
+			if err := json.Unmarshal([]byte(toolCallsText), &msg.ToolCalls); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tool_calls: %w", err)
+			}
+		}
+		msg.ToolID = stmt.ColumnText(3)
+		msg.SessionID = int64(stmt.ColumnInt(4))
+		messages = append(messages, msg)
+	}
+
+	if err := stmt.Err(); err != nil {
+		return nil, fmt.Errorf("search execution error: %w", err)
+	}
+
+	return messages, nil
 }
 
 // Clear deletes all messages from the active session.
