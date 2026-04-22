@@ -28,6 +28,12 @@ type HTTPProvider struct {
 // defaultTimeout is the HTTP client timeout for provider requests.
 const defaultTimeout = 5 * 60 * time.Second
 
+// defaultReasoningBudget is the default reasoning budget in tokens.
+// llama.cpp's reasoning budget sampler limits tokens inside a reasoning block
+// (e.g. between <think> and </think>). Default -1 means unlimited, which can
+// cause server timeouts. 4096 tokens is a reasonable limit for reasoning.
+const defaultReasoningBudget = 4096
+
 // logDebug writes a request/response pair to the debug logger.
 func (p *HTTPProvider) logDebug(ctx context.Context, method, url string, reqBody, respBody interface{}) {
 	if p.DebugLogger == nil {
@@ -45,10 +51,11 @@ func (p *HTTPProvider) logDebug(ctx context.Context, method, url string, reqBody
 
 // chatRequest is the JSON request body for the chat completions endpoint.
 type chatRequest struct {
-	Model    string          `json:"model"`
-	Messages []msgEntry      `json:"messages"`
-	Stream   bool            `json:"stream"`
-	Tools    []types.ToolDef `json:"tools,omitempty"`
+	Model             string          `json:"model"`
+	Messages          []msgEntry      `json:"messages"`
+	Stream            bool            `json:"stream"`
+	Tools             []types.ToolDef `json:"tools,omitempty"`
+	ThinkingBudget    int             `json:"thinking_budget_tokens,omitempty"`
 }
 
 type msgEntry struct {
@@ -170,9 +177,10 @@ func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (
 	}
 
 	body := chatRequest{
-		Model:    p.Model,
-		Messages: msgs,
-		Stream:   true,
+		Model:            p.Model,
+		Messages:         msgs,
+		Stream:           true,
+		ThinkingBudget:   defaultReasoningBudget,
 	}
 
 	data, err := json.Marshal(body)
@@ -248,10 +256,11 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 	}
 
 	body := chatRequest{
-		Model:    p.Model,
-		Messages: msgs,
-		Stream:   false,
-		Tools:    tools,
+		Model:            p.Model,
+		Messages:         msgs,
+		Stream:           false,
+		Tools:            tools,
+		ThinkingBudget:   defaultReasoningBudget,
 	}
 
 	data, err := json.Marshal(body)
