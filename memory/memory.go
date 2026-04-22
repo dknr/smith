@@ -32,10 +32,36 @@ CREATE TABLE IF NOT EXISTS memories (
 	tags TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+	content,
+	category,
+	tags,
+	content='memories',
+	content_rowid='id'
+);
+
 CREATE TABLE IF NOT EXISTS agent_state (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+	INSERT INTO memories_fts(rowid, content, category, tags)
+	VALUES (new.id, new.content, new.category, new.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+	INSERT INTO memories_fts(memories_fts, rowid, content, category, tags)
+	VALUES ('delete', old.id, old.content, old.category, old.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+	INSERT INTO memories_fts(memories_fts, rowid, content, category, tags)
+	VALUES ('delete', old.id, old.content, old.category, old.tags);
+	INSERT INTO memories_fts(rowid, content, category, tags)
+	VALUES (new.id, new.content, new.category, new.tags);
+END;
 `
 
 // New creates a new agent state store backed by an in-memory SQLite database.
@@ -251,4 +277,49 @@ func (s *Store) Delete(id int64) error {
 func MemoryToJSON(m Memory) string {
 	data, _ := json.MarshalIndent(m, "", "  ")
 	return string(data)
+}
+
+// Search performs a full-text search across the memory store.
+// It returns memories matching the query, ordered by relevance.
+func (s *Store) Search(query string, limit int) ([]Memory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if limit <= 0 {
+		limit = 10
+	}
+
+	stmt, _, err := s.conn.Prepare(`
+		SELECT m.id, m.content, m.category, m.tags, m.created_at
+		FROM memories_fts f
+		JOIN memories m ON m.id = f.rowid
+		WHERE memories_fts MATCH ?
+		ORDER BY rank
+		LIMIT ?
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare search query: %w", err)
+	}
+	defer stmt.Close()
+
+	stmt.BindText(1, query)
+	stmt.BindInt(2, limit)
+
+	var memories []Memory
+	for stmt.Step() {
+		m := Memory{
+			ID:        stmt.ColumnInt64(0),
+			Content:   stmt.ColumnText(1),
+			Category:  stmt.ColumnText(2),
+			Tags:      stmt.ColumnText(3),
+			CreatedAt: stmt.ColumnText(4),
+		}
+		memories = append(memories, m)
+	}
+
+	if err := stmt.Err(); err != nil {
+		return nil, fmt.Errorf("search execution error: %w", err)
+	}
+
+	return memories, nil
 }

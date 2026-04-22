@@ -45,8 +45,10 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 
 	soulTool := tools.NewSoulTool(memStore)
 	memoryTool := tools.NewMemoryTool(memStore)
+	searchTool := tools.NewSearchTool(memStore, sess)
 	executor.RegisterFn("soul", soulTool.Execute, tools.SoulToolDef)
 	executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
+	executor.RegisterFn("search", searchTool.Execute, tools.SearchToolDef)
 
 	provider := llm.NewProvider(cfg, executor, debugLogger, executor.Definitions())
 	a := agent.New(provider, executor, sess, logger, memStore)
