@@ -1,15 +1,15 @@
 package client
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
 	"smith/types"
 
+	"github.com/chzyer/readline"
 	"github.com/gorilla/websocket"
 )
 
@@ -26,7 +26,7 @@ func dial(addr string) (*websocket.Conn, error) {
 // It prints history messages and verifies sync complete.
 // If colorize is true, tool calls are shown in yellow and errors in red.
 // Returns whether the session was new (no prior history) and the current mode.
-func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool, string, error) {
+func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) (bool, string, error) {
 	req := types.Request{
 		ID:   "0",
 		Role: "user",
@@ -63,24 +63,24 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 			mode := r.Mode
 			if isNew && colorize {
 				if r.Kickoff != "" {
-					fmt.Printf("\033[90m  %s\033[0m\n", r.Kickoff)
+					fmt.Fprintf(w, "\033[90m  %s\033[0m\n", r.Kickoff)
 				}
 				// Replay buffered kickoff responses (incremental deltas).
 				var lastContent string
 				for _, br := range bufferedKickoff {
 					if br.Role == "assistant" && br.Content != "" {
 						if len(br.Content) > len(lastContent) {
-							fmt.Print(br.Content[len(lastContent):])
+							fmt.Fprint(w, br.Content[len(lastContent):])
 						}
 						lastContent = br.Content
 						if br.Done {
-							fmt.Println()
+							fmt.Fprintln(w)
 							if colorize && (br.Usage != nil || br.Timing != nil) {
-								printStatsLine(br.Usage, br.Timing)
+								printStatsLine(w, br.Usage, br.Timing)
 							}
 						}
 					} else {
-						renderResponse(br, colorize)
+						renderResponse(w, br, colorize)
 					}
 				}
 			}
@@ -94,13 +94,13 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 
 		// For resumed sessions, render all responses immediately.
 		if hasHistory {
-			renderResponse(r, colorize)
+			renderResponse(w, r, colorize)
 			continue
 		}
 
 		// For new sessions, buffer kickoff streaming responses.
 		if r.Role == "new_session" {
-			printNewSession()
+			printNewSession(w)
 			isNew = true
 			logger.Debug("new session detected")
 			continue
@@ -112,55 +112,55 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 }
 
 // printNewSession prints a grey "New session" line with the current timestamp.
-func printNewSession() {
-	fmt.Printf("\033[90m%s | New session\033[0m\n", time.Now().Format("15:04:05"))
+func printNewSession(w io.Writer) {
+	fmt.Fprintf(w, "\033[90m%s | New session\033[0m\n", time.Now().Format("15:04:05"))
 }
 
 // renderResponse prints a single Response using the standard format.
 // Used by both syncSession and readLoop for consistent display.
 // Returns the mode if it was updated, or empty string.
-func renderResponse(r *types.Response, colorize bool) string {
+func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 	if r.Command == "mode_change" {
 		if colorize {
-			fmt.Printf("\033[90m%s\033[0m\n", r.Content)
+			fmt.Fprintf(w, "\033[90m%s\033[0m\n", r.Content)
 		} else {
-			fmt.Println(r.Content)
+			fmt.Fprintln(w, r.Content)
 		}
 		return r.Mode
 	}
 	if r.Role == "tool_call" {
 		if colorize {
-			fmt.Printf("\033[2;34m%s\033[0m\n", r.Content)
+			fmt.Fprintf(w, "\033[2;34m%s\033[0m\n", r.Content)
 		}
 		return ""
 	}
 	if r.Role == "error" {
 		if colorize {
-			fmt.Printf("\033[31mError: %s\033[0m\n", r.Content)
+			fmt.Fprintf(w, "\033[31mError: %s\033[0m\n", r.Content)
 		} else {
-			fmt.Fprintf(os.Stderr, "error: %s\n", r.Content)
+			fmt.Fprintf(w, "error: %s\n", r.Content)
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 		return ""
 	}
 	if r.Role == "user" {
-		fmt.Printf("> %s\n", r.Content)
+		fmt.Fprintf(w, "> %s\n", r.Content)
 		return ""
 	}
 	if r.Role == "tool" {
 		if colorize {
-			fmt.Printf("\033[2;36m%s\033[0m\n", r.Content)
+			fmt.Fprintf(w, "\033[2;36m%s\033[0m\n", r.Content)
 		} else {
-			fmt.Println(r.Content)
+			fmt.Fprintln(w, r.Content)
 		}
 		return ""
 	}
 	// assistant: batch print (full content, no delta).
 	if r.Content != "" {
-		fmt.Println(r.Content)
+		fmt.Fprintln(w, r.Content)
 	}
 	if r.Done && colorize && (r.Usage != nil || r.Timing != nil) {
-		printStatsLine(r.Usage, r.Timing)
+		printStatsLine(w, r.Usage, r.Timing)
 	}
 	return ""
 }
@@ -168,7 +168,7 @@ func renderResponse(r *types.Response, colorize bool) string {
 // readLoop reads streaming responses from the server, printing deltas as they arrive.
 // If colorize is true, tool calls are shown in yellow and errors in red.
 // Returns on error or when done=true is received.
-func readLoop(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
+func readLoop(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) error {
 	var lastContent string
 	for {
 		_, resp, err := conn.ReadMessage()
@@ -185,20 +185,20 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 
 		// Delegate non-assistant roles to renderResponse.
 		if r.Role != "assistant" {
-			renderResponse(r, colorize)
+			renderResponse(w, r, colorize)
 			continue
 		}
 
 		// Assistant: delta printing.
 		if len(r.Content) > len(lastContent) {
-			fmt.Print(r.Content[len(lastContent):])
+			fmt.Fprint(w, r.Content[len(lastContent):])
 		}
 		lastContent = r.Content
 
 		if r.Done {
-			fmt.Println()
+			fmt.Fprintln(w)
 			if colorize && (r.Usage != nil || r.Timing != nil) {
-				printStatsLine(r.Usage, r.Timing)
+				printStatsLine(w, r.Usage, r.Timing)
 			}
 			return nil
 		}
@@ -231,31 +231,12 @@ func Send(addr, message string, logger *slog.Logger, colorize bool) error {
 	}
 	logger.Debug("sent message", "id", req.ID, "content", req.Content)
 
-	return readLoop(conn, logger, colorize)
-}
-
-// modePrompt returns the colored prompt prefix based on the current mode.
-func modePrompt(mode string) string {
-	if mode == "" {
-		return "> "
-	}
-	var color string
-	switch mode {
-	case "safe":
-		color = "\033[32m" // green foreground
-	case "edit":
-		color = "\033[36m" // cyan foreground
-	case "full":
-		color = "\033[31m" // red foreground
-	default:
-		color = "\033[90m" // grey foreground
-	}
-	return color + "[" + mode + "]" + "\033[0m > "
+	return readLoop(conn, logger, io.Discard, colorize)
 }
 
 // Chat starts an interactive session with the server.
 // Type messages to send, /quit to exit.
-func Chat(addr string, logger *slog.Logger) error {
+func Chat(addr string, logger *slog.Logger, term *Terminal) error {
 	conn, err := dial(addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
@@ -264,47 +245,54 @@ func Chat(addr string, logger *slog.Logger) error {
 
 	logger.Debug("connected to server", "addr", addr)
 
-	_, mode, err := syncSession(conn, logger, true)
+	_, mode, err := syncSession(conn, logger, term.Stdout(), true)
 	if err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
 	msgID := 0
 
 	for {
-		fmt.Print(modePrompt(mode))
-		if !scanner.Scan() {
-			fmt.Println()
+		term.SetPrompt(modePrompt(mode))
+		input, err := term.Readline()
+		if err == io.EOF {
 			logger.Debug("input stream ended, exiting")
 			break
 		}
-		input := scanner.Text()
+		if err == readline.ErrInterrupt {
+			if input == "" {
+				break
+			}
+			continue
+		}
 		if strings.TrimSpace(input) == "/quit" {
 			logger.Debug("quit command received, exiting")
 			break
 		}
 		if strings.TrimSpace(input) == "/reset" {
 			// First compact the session to preserve context before resetting.
-			_, err := sendCommand(conn, logger, "/compact")
+			newMode, err := sendCommand(conn, logger, term.Stdout(), "/compact")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				fmt.Fprintf(term.Stderr(), "error: %v\n", err)
 				break
 			}
-			newMode, err := sendReset(conn, logger, true)
+			newMode2, err := sendReset(conn, logger, term.Stdout(), true)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				fmt.Fprintf(term.Stderr(), "error: %v\n", err)
 				break
 			}
 			if newMode != "" {
 				mode = newMode
 			}
+			if newMode2 != "" {
+				mode = newMode2
+			}
 			continue
 		}
 		if strings.HasPrefix(strings.TrimSpace(input), "/") {
-			newMode, err := sendCommand(conn, logger, input)
+			newMode, err := sendCommand(conn, logger, term.Stdout(), input)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				fmt.Fprintf(term.Stderr(), "error: %v\n", err)
 				break
 			}
 			if newMode != "" {
@@ -324,19 +312,19 @@ func Chat(addr string, logger *slog.Logger) error {
 		}
 		data, err := types.MarshalRequest(req)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintf(term.Stderr(), "error: %v\n", err)
 			continue
 		}
 
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintf(term.Stderr(), "error: %v\n", err)
 			logger.Error("failed to send message", "error", err)
 			break
 		}
 		logger.Debug("sent message", "id", req.ID, "content", req.Content)
 
-		if err := readLoop(conn, logger, true); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		if err := readLoop(conn, logger, term.Stdout(), true); err != nil {
+			fmt.Fprintf(term.Stderr(), "error: %v\n", err)
 			break
 		}
 	}
@@ -346,7 +334,7 @@ func Chat(addr string, logger *slog.Logger) error {
 
 // sendCommand sends a slash command to the server and renders the response.
 // Returns the new mode if a mode_change command was executed.
-func sendCommand(conn *websocket.Conn, logger *slog.Logger, input string) (string, error) {
+func sendCommand(conn *websocket.Conn, logger *slog.Logger, w io.Writer, input string) (string, error) {
 	req := types.Request{
 		ID:      "0",
 		Role:    "user",
@@ -370,7 +358,7 @@ func sendCommand(conn *websocket.Conn, logger *slog.Logger, input string) (strin
 		if err != nil {
 			return "", fmt.Errorf("failed to parse command response: %w", err)
 		}
-		newMode := renderResponse(r, true)
+		newMode := renderResponse(w, r, true)
 		if newMode != "" {
 			mode = newMode
 		}
@@ -382,7 +370,7 @@ func sendCommand(conn *websocket.Conn, logger *slog.Logger, input string) (strin
 
 // sendReset sends a reset request to the server, prints "New session",
 // and streams the kickoff response. Returns the mode if available.
-func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) (string, error) {
+func sendReset(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) (string, error) {
 	req := types.Request{
 		ID:    "0",
 		Reset: true,
@@ -417,7 +405,7 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) (string
 
 		// Print "New session" banner once on first assistant chunk.
 		if r.Role == "assistant" && colorize && !bannerPrinted {
-			printNewSession()
+			printNewSession(w)
 			bannerPrinted = true
 		}
 
@@ -428,7 +416,7 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) (string
 
 		// Render non-assistant roles immediately.
 		if r.Role != "assistant" {
-			renderResponse(r, colorize)
+			renderResponse(w, r, colorize)
 			continue
 		}
 
@@ -436,25 +424,25 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) (string
 		if r.Done {
 			// For batch responses, print any remaining content.
 			if len(r.Content) > len(lastContent) {
-				fmt.Print(r.Content[len(lastContent):])
+				fmt.Fprint(w, r.Content[len(lastContent):])
 			}
-			fmt.Println()
+			fmt.Fprintln(w)
 			if r.Reset && colorize && (r.Usage != nil || r.Timing != nil) {
-				printStatsLine(r.Usage, r.Timing)
+				printStatsLine(w, r.Usage, r.Timing)
 			}
 			return mode, nil
 		}
 
 		// Print only the new characters since last response.
 		if len(r.Content) > len(lastContent) {
-			fmt.Print(r.Content[len(lastContent):])
+			fmt.Fprint(w, r.Content[len(lastContent):])
 		}
 		lastContent = r.Content
 	}
 }
 
 // printStatsLine prints the grey timestamp + token stats line, matching bantam's format.
-func printStatsLine(usage *types.ResponseUsage, timing *types.ResponseTiming) {
+func printStatsLine(w io.Writer, usage *types.ResponseUsage, timing *types.ResponseTiming) {
 	var inputTokens, outputTokens, totalTokens int
 	if usage != nil {
 		inputTokens = usage.PromptTokens
@@ -462,18 +450,18 @@ func printStatsLine(usage *types.ResponseUsage, timing *types.ResponseTiming) {
 		totalTokens = usage.TotalTokens
 	}
 
-	fmt.Printf("\033[90m%s | ", time.Now().Format("15:04:05"))
+	fmt.Fprintf(w, "\033[90m%s | ", time.Now().Format("15:04:05"))
 	if timing != nil && timing.PromptPerSecond > 0 && timing.PredictedPerSecond > 0 {
-		fmt.Printf("%d (%.1f/s) => %d (%.1f/s) => %d (%.1fs)",
+		fmt.Fprintf(w, "%d (%.1f/s) => %d (%.1f/s) => %d (%.1fs)",
 			inputTokens, timing.PromptPerSecond,
 			outputTokens, timing.PredictedPerSecond,
 			totalTokens, (timing.PromptMs+timing.PredictedMs)/1000)
 	} else if timing != nil {
-		fmt.Printf("%d => %d => %d tokens (%.1fs)",
+		fmt.Fprintf(w, "%d => %d => %d tokens (%.1fs)",
 			inputTokens, outputTokens, totalTokens,
 			(timing.PromptMs+timing.PredictedMs)/1000)
 	} else {
-		fmt.Printf("%d => %d => %d tokens", inputTokens, outputTokens, totalTokens)
+		fmt.Fprintf(w, "%d => %d => %d tokens", inputTokens, outputTokens, totalTokens)
 	}
-	fmt.Println("\033[0m")
+	fmt.Fprintln(w, "\033[0m")
 }

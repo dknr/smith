@@ -89,7 +89,14 @@ var chatCmd = &cobra.Command{
 		logger, cleanup := logging.SetupClient("chat", debug)
 		defer cleanup()
 
-		if err := client.Chat(listenAddr, logger); err != nil {
+		term, err := client.NewTerminal("> ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		defer term.Close()
+
+		if err := client.Chat(listenAddr, logger, term); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
