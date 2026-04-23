@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"smith/types"
@@ -34,16 +35,22 @@ func (r *Registry) Definitions() []types.ToolDef {
 	}
 	builtins := modeTools[mode]
 	defs := make([]types.ToolDef, 0, len(builtins))
+	added := make(map[string]bool)
 	for name := range builtins {
-		if def, ok := r.defMap[name]; ok {
+		if def, ok := r.defMap[name]; ok && !added[def.Name] {
 			defs = append(defs, def)
+			added[def.Name] = true
 		}
 	}
 	for _, def := range r.defs {
-		if builtins[def.Name] {
+		if builtins[def.Name] && !added[def.Name] {
 			defs = append(defs, def)
+			added[def.Name] = true
 		}
 	}
+	sort.Slice(defs, func(i, j int) bool {
+		return defs[i].Name < defs[j].Name
+	})
 	return defs
 }
 

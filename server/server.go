@@ -39,7 +39,7 @@ var (
 // Serve starts a WebSocket server on the given address that processes messages
 // through an LLM agent and sends responses back to the client.
 // It shuts down gracefully on SIGINT or SIGTERM.
-func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *session.Session, memStore *memory.Store, logger *slog.Logger) error {
+func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *session.Session, memStore *memory.Store, logger *slog.Logger, turnLogger *llm.TurnLogger) error {
 	// Shared across all connections.
 	executor := tools.NewRegistry()
 
@@ -50,7 +50,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 	executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
 	executor.RegisterFn("search", searchTool.Execute, tools.SearchToolDef)
 
-	provider := llm.NewProvider(cfg, executor, debugLogger, executor.Definitions())
+	provider := llm.NewProvider(cfg, executor, debugLogger, turnLogger, executor.Definitions())
 	a := agent.New(provider, executor, sess, logger, memStore)
 
 	// Run kickoff autonomously when session is empty and kickoff is configured.

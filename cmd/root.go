@@ -6,6 +6,7 @@ import (
 
 	"smith/client"
 	"smith/config"
+	"smith/llm"
 	"smith/logging"
 	"smith/memory"
 	"smith/server"
@@ -18,6 +19,7 @@ var (
 	listenAddr string
 	debug      bool
 	verbose    bool
+	debugTurns string
 	version    = "dev"
 )
 
@@ -60,7 +62,18 @@ var serveCmd = &cobra.Command{
 		}
 		defer memStore.Close()
 
-		if err := server.Serve(listenAddr, cfg, networkLogger, sess, memStore, serverLogger); err != nil {
+	turnPath := "log/turns"
+		if debugTurns != "" {
+			turnPath = debugTurns
+		}
+
+		turnLogger, err := llm.NewTurnLogger(turnPath)
+		if err != nil {
+			serverLogger.Error("turn logger error", "error", err)
+			os.Exit(1)
+		}
+
+		if err := server.Serve(listenAddr, cfg, networkLogger, sess, memStore, serverLogger, turnLogger); err != nil {
 			serverLogger.Error("server error", "error", err)
 			os.Exit(1)
 		}
@@ -117,5 +130,6 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVarP(&listenAddr, "addr", "a", "localhost:26856", "server address")
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "enable debug logging to log/smith-*.log")
+	serveCmd.Flags().StringVar(&debugTurns, "debug-turns", "", "enable turn request/response logging (default: log/turns)")
 	sendCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show tool calls and stats in send mode")
 }

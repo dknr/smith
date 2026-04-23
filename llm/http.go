@@ -21,6 +21,7 @@ type HTTPProvider struct {
 	SystemPrompt string
 	Tools        []types.ToolDef
 	DebugLogger  *slog.Logger
+	TurnLogger   *TurnLogger
 }
 
 // defaultTimeout is the HTTP client timeout for provider requests.
@@ -177,6 +178,16 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 	}
 
 	url := p.BaseURL + "/chat/completions"
+
+	// Log request if turn logger is configured.
+	var turn int64
+	if p.TurnLogger != nil {
+		turn = p.TurnLogger.Next()
+		if logErr := p.TurnLogger.LogRequest(turn, data); logErr != nil {
+			p.logDebug(ctx, http.MethodPost, url, nil, fmt.Sprintf("turn log error: %v", logErr))
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
 		return CallResult{}, fmt.Errorf("failed to create request: %w", err)
@@ -202,6 +213,14 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 	var result nonStreamResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return CallResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Log response if turn logger is configured.
+	if p.TurnLogger != nil && turn > 0 {
+		respJSON, _ := json.Marshal(result)
+		if logErr := p.TurnLogger.LogResponse(turn, respJSON); logErr != nil {
+			p.logDebug(ctx, http.MethodPost, url, nil, fmt.Sprintf("turn log error: %v", logErr))
+		}
 	}
 
 	if len(result.Choices) == 0 {

@@ -228,6 +228,14 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 			if result.Usage != nil {
 				outputTokens += result.Usage.CompletionTokens
 			}
+			if result.Text == "" {
+				respCh <- &types.Response{
+					Role:    "error",
+					Content: "model returned empty response with no tool calls",
+					Done:    true,
+				}
+				return
+			}
 			a.streamText(ctx, result.Text, result.Usage, result.Timing, respCh)
 
 			// Save all new messages to the session.
@@ -248,7 +256,11 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 }
 
 func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.CallResult, respCh chan<- *types.Response, toolCount int) int {
-	for _, tc := range result.ToolCalls {
+	for i, tc := range result.ToolCalls {
+		// Use a deterministic ID for cache consistency
+		if tc.ID == "" {
+			tc.ID = fmt.Sprintf("call_%d_%d", turn, i)
+		}
 		a.mu.Lock()
 		a.history = append(a.history, types.Message{
 			Role:      "assistant",
