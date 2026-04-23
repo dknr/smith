@@ -124,6 +124,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				for resp := range respCh {
 					resp.ID = req.ID
 					resp.Reset = true
+					resp.Mode = string(a.Mode())
 
 					data, err := types.MarshalResponse(*resp)
 					if err != nil {
@@ -328,6 +329,7 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger, agentL
 		Content:      "",
 		Done:         true,
 		SyncComplete: true,
+		Mode:         string(a.Mode()),
 	}
 	data, err := types.MarshalResponse(resp)
 	if err != nil {

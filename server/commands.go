@@ -32,6 +32,7 @@ var commands = []Command{
 				Content: "Mode set to safe.",
 				Done:    true,
 				Command: "mode_change",
+				Mode:    "safe",
 			}, logger)
 		},
 	},
@@ -47,6 +48,7 @@ var commands = []Command{
 				Content: "Mode set to edit.",
 				Done:    true,
 				Command: "mode_change",
+				Mode:    "edit",
 			}, logger)
 		},
 	},
@@ -62,6 +64,7 @@ var commands = []Command{
 				Content: "Mode set to full.",
 				Done:    true,
 				Command: "mode_change",
+				Mode:    "full",
 			}, logger)
 		},
 	},

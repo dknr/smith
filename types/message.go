@@ -74,6 +74,7 @@ type Response struct {
 	Usage        *ResponseUsage  `json:"usage,omitempty"`
 	Timing       *ResponseTiming `json:"timing,omitempty"`
 	Command      string          `json:"command,omitempty"` // Server-only command (e.g., "mode_change")
+	Mode         string          `json:"mode,omitempty"`    // Current session mode
 }
 
 // ResponseUsage holds token usage information.

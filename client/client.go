@@ -25,8 +25,8 @@ func dial(addr string) (*websocket.Conn, error) {
 // syncSession connects to the server and requests a session sync.
 // It prints history messages and verifies sync complete.
 // If colorize is true, tool calls are shown in yellow and errors in red.
-// Returns whether the session was new (no prior history).
-func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool, error) {
+// Returns whether the session was new (no prior history) and the current mode.
+func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool, string, error) {
 	req := types.Request{
 		ID:   "0",
 		Role: "user",
@@ -34,11 +34,11 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 	}
 	data, err := types.MarshalRequest(req)
 	if err != nil {
-		return false, fmt.Errorf("failed to marshal sync request: %w", err)
+		return false, "", fmt.Errorf("failed to marshal sync request: %w", err)
 	}
 
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		return false, fmt.Errorf("failed to send sync request: %w", err)
+		return false, "", fmt.Errorf("failed to send sync request: %w", err)
 	}
 	logger.Debug("sent sync request")
 
@@ -48,18 +48,19 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
-			return false, fmt.Errorf("failed to read sync response: %w", err)
+			return false, "", fmt.Errorf("failed to read sync response: %w", err)
 		}
 
 		r, err := types.UnmarshalResponse(resp)
 		if err != nil {
-			return false, fmt.Errorf("failed to parse sync response: %w", err)
+			return false, "", fmt.Errorf("failed to parse sync response: %w", err)
 		}
 
 		logger.Debug("sync response received", "role", r.Role, "done", r.Done, "syncComplete", r.SyncComplete)
 
 		if r.SyncComplete {
 			logger.Debug("session synced")
+			mode := r.Mode
 			if isNew && colorize {
 				if r.Kickoff != "" {
 					fmt.Printf("\033[90m  %s\033[0m\n", r.Kickoff)
@@ -83,7 +84,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, colorize bool) (bool
 					}
 				}
 			}
-			return !hasHistory, nil
+			return !hasHistory, mode, nil
 		}
 
 		// Track whether we've seen history messages (indicates resumed session).
@@ -117,20 +118,21 @@ func printNewSession() {
 
 // renderResponse prints a single Response using the standard format.
 // Used by both syncSession and readLoop for consistent display.
-func renderResponse(r *types.Response, colorize bool) {
+// Returns the mode if it was updated, or empty string.
+func renderResponse(r *types.Response, colorize bool) string {
 	if r.Command == "mode_change" {
 		if colorize {
 			fmt.Printf("\033[90m%s\033[0m\n", r.Content)
 		} else {
 			fmt.Println(r.Content)
 		}
-		return
+		return r.Mode
 	}
 	if r.Role == "tool_call" {
 		if colorize {
 			fmt.Printf("\033[33m%s\033[0m\n", r.Content)
 		}
-		return
+		return ""
 	}
 	if r.Role == "error" {
 		if colorize {
@@ -139,15 +141,15 @@ func renderResponse(r *types.Response, colorize bool) {
 			fmt.Fprintf(os.Stderr, "error: %s\n", r.Content)
 		}
 		fmt.Println()
-		return
+		return ""
 	}
 	if r.Role == "user" {
 		fmt.Printf("> %s\n", r.Content)
-		return
+		return ""
 	}
 	if r.Role == "tool" {
 		fmt.Println(r.Content)
-		return
+		return ""
 	}
 	// assistant: batch print (full content, no delta).
 	if r.Content != "" {
@@ -156,6 +158,7 @@ func renderResponse(r *types.Response, colorize bool) {
 	if r.Done && colorize && (r.Usage != nil || r.Timing != nil) {
 		printStatsLine(r.Usage, r.Timing)
 	}
+	return ""
 }
 
 // readLoop reads streaming responses from the server, printing deltas as they arrive.
@@ -238,7 +241,8 @@ func Chat(addr string, logger *slog.Logger) error {
 
 	logger.Debug("connected to server", "addr", addr)
 
-	if _, err := syncSession(conn, logger, true); err != nil {
+	_, mode, err := syncSession(conn, logger, true)
+	if err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
@@ -246,7 +250,11 @@ func Chat(addr string, logger *slog.Logger) error {
 	msgID := 0
 
 	for {
-		fmt.Print("> ")
+		prompt := "> "
+		if mode != "" {
+			prompt = "[" + mode + "] "
+		}
+		fmt.Print(prompt)
 		if !scanner.Scan() {
 			fmt.Println()
 			logger.Debug("input stream ended, exiting")
@@ -258,16 +266,24 @@ func Chat(addr string, logger *slog.Logger) error {
 			break
 		}
 		if strings.TrimSpace(input) == "/reset" {
-			if err := sendReset(conn, logger, true); err != nil {
+			newMode, err := sendReset(conn, logger, true)
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				break
+			}
+			if newMode != "" {
+				mode = newMode
 			}
 			continue
 		}
 		if strings.HasPrefix(strings.TrimSpace(input), "/") {
-			if err := sendCommand(conn, logger, input); err != nil {
+			newMode, err := sendCommand(conn, logger, input)
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				break
+			}
+			if newMode != "" {
+				mode = newMode
 			}
 			continue
 		}
@@ -304,7 +320,8 @@ func Chat(addr string, logger *slog.Logger) error {
 }
 
 // sendCommand sends a slash command to the server and renders the response.
-func sendCommand(conn *websocket.Conn, logger *slog.Logger, input string) error {
+// Returns the new mode if a mode_change command was executed.
+func sendCommand(conn *websocket.Conn, logger *slog.Logger, input string) (string, error) {
 	req := types.Request{
 		ID:      "0",
 		Role:    "user",
@@ -312,56 +329,65 @@ func sendCommand(conn *websocket.Conn, logger *slog.Logger, input string) error 
 	}
 	data, err := types.MarshalRequest(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal command: %w", err)
+		return "", fmt.Errorf("failed to marshal command: %w", err)
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		return fmt.Errorf("failed to send command: %w", err)
+		return "", fmt.Errorf("failed to send command: %w", err)
 	}
 
+	var mode string
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
-			return fmt.Errorf("failed to read command response: %w", err)
+			return "", fmt.Errorf("failed to read command response: %w", err)
 		}
 		r, err := types.UnmarshalResponse(resp)
 		if err != nil {
-			return fmt.Errorf("failed to parse command response: %w", err)
+			return "", fmt.Errorf("failed to parse command response: %w", err)
 		}
-		renderResponse(r, true)
+		newMode := renderResponse(r, true)
+		if newMode != "" {
+			mode = newMode
+		}
 		if r.Done {
-			return nil
+			return mode, nil
 		}
 	}
 }
 
 // sendReset sends a reset request to the server, prints "New session",
-// and streams the kickoff response.
-func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
+// and streams the kickoff response. Returns the mode if available.
+func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) (string, error) {
 	req := types.Request{
 		ID:    "0",
 		Reset: true,
 	}
 	data, err := types.MarshalRequest(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal reset request: %w", err)
+		return "", fmt.Errorf("failed to marshal reset request: %w", err)
 	}
 
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		return fmt.Errorf("failed to send reset request: %w", err)
+		return "", fmt.Errorf("failed to send reset request: %w", err)
 	}
 
 	var bufferedKickoff []*types.Response
 	var bannerPrinted bool
 	var lastContent string
+	var mode string
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
-			return fmt.Errorf("failed to read reset response: %w", err)
+			return "", fmt.Errorf("failed to read reset response: %w", err)
 		}
 
 		r, err := types.UnmarshalResponse(resp)
 		if err != nil {
-			return fmt.Errorf("failed to parse reset response: %w", err)
+			return "", fmt.Errorf("failed to parse reset response: %w", err)
+		}
+
+		if r.Mode != "" {
+			mode = r.Mode
 		}
 
 		// Print "New session" banner once on first assistant chunk.
@@ -391,7 +417,7 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, colorize bool) error {
 			if r.Reset && colorize && (r.Usage != nil || r.Timing != nil) {
 				printStatsLine(r.Usage, r.Timing)
 			}
-			return nil
+			return mode, nil
 		}
 
 		// Print only the new characters since last response.
