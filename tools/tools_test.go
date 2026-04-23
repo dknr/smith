@@ -9,75 +9,40 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"smith/types"
 )
 
 func TestRegistry_Definitions(t *testing.T) {
-	r := NewRegistry()
-	defs := r.Definitions()
-	if len(defs) != 4 {
-		t.Fatalf("expected 4 tool definitions in safe mode, got %d", len(defs))
+	modeToolSets := map[string][]string{
+		"safe":   {"time", "list", "view", "lua"},
+		"edit":   {"time", "list", "view", "lua", "git", "edit"},
+		"full":   {"time", "list", "view", "lua", "git", "edit", "bash"},
 	}
 
-	names := make(map[string]bool)
-	for _, d := range defs {
-		names[d.Name] = true
-		if d.Description == "" {
-			t.Errorf("tool %s has empty description", d.Name)
-		}
-	}
-	for _, want := range []string{"time", "list", "view", "lua"} {
-		if !names[want] {
-			t.Errorf("missing tool definition: %s", want)
-		}
-	}
-	// bash should not be in safe mode
-	if names["bash"] {
-		t.Error("bash should not be in safe mode")
-	}
-	// edit and git should not be in safe mode
-	if names["edit"] {
-		t.Error("edit should not be in safe mode")
-	}
-	if names["git"] {
-		t.Error("git should not be in safe mode")
-	}
-}
+	for mode, expected := range modeToolSets {
+		t.Run(mode, func(t *testing.T) {
+			r := NewRegistry()
+			r.SetMode(types.Mode(mode))
+			defs := r.Definitions()
 
-func TestRegistry_Definitions_EditMode(t *testing.T) {
-	r := NewRegistry()
-	r.SetMode("edit")
-	defs := r.Definitions()
-	if len(defs) != 6 {
-		t.Fatalf("expected 6 tool definitions in edit mode, got %d", len(defs))
-	}
+			if len(defs) != len(expected) {
+				t.Fatalf("expected %d tool definitions, got %d", len(expected), len(defs))
+			}
 
-	names := make(map[string]bool)
-	for _, d := range defs {
-		names[d.Name] = true
-	}
-	for _, want := range []string{"time", "list", "view", "lua", "git", "edit"} {
-		if !names[want] {
-			t.Errorf("missing tool definition: %s", want)
-		}
-	}
-}
-
-func TestRegistry_Definitions_FullMode(t *testing.T) {
-	r := NewRegistry()
-	r.SetMode("full")
-	defs := r.Definitions()
-	if len(defs) != 7 {
-		t.Fatalf("expected 7 tool definitions in full mode, got %d", len(defs))
-	}
-
-	names := make(map[string]bool)
-	for _, d := range defs {
-		names[d.Name] = true
-	}
-	for _, want := range []string{"time", "list", "view", "lua", "git", "edit", "bash"} {
-		if !names[want] {
-			t.Errorf("missing tool definition: %s", want)
-		}
+			names := make(map[string]bool)
+			for _, d := range defs {
+				names[d.Name] = true
+				if d.Description == "" {
+					t.Errorf("tool %s has empty description", d.Name)
+				}
+			}
+			for _, want := range expected {
+				if !names[want] {
+					t.Errorf("missing tool definition: %s", want)
+				}
+			}
+		})
 	}
 }
 
