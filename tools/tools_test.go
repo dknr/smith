@@ -301,8 +301,8 @@ func TestExecute_bash_emptyCommand(t *testing.T) {
 
 func TestExecute_bash_truncation(t *testing.T) {
 	r := NewRegistry()
-	// Generate 5kB of output.
-	args, err := json.Marshal(map[string]string{"command": "printf '%5000s' "})
+	// Generate 20kB of output (above 16KB maxBashOutput threshold).
+	args, err := json.Marshal(map[string]string{"command": "printf '%20000s' "})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,8 +310,9 @@ func TestExecute_bash_truncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bash truncation: %v", err)
 	}
-	if len(result) >= 5000 {
-		t.Errorf("result should be truncated, got %d bytes", len(result))
+	// Truncated output = 16384 (max) + "\n… [truncated]" (16 bytes) = 16400
+	if len(result) != 16400 {
+		t.Errorf("result length = %d, want 16400", len(result))
 	}
 	if !strings.Contains(result, "[truncated]") {
 		t.Error("result should contain [truncated] marker")

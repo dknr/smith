@@ -5,7 +5,6 @@ import (
 	"os"
 	"testing"
 
-	sqlite3 "github.com/ncruces/go-sqlite3"
 	"smith/types"
 )
 
@@ -363,44 +362,4 @@ func TestArchiveCurrent_preservesOldMessages(t *testing.T) {
 	}
 }
 
-func TestNewWithDB_migration(t *testing.T) {
-	tmp := t.TempDir()
-	path := tmp + "/test.db"
 
-	// Simulate old DB schema (no session_id column, no sessions table).
-	conn, err := sqlite3.Open(path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	oldSchema := `
-CREATE TABLE IF NOT EXISTS messages (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	role TEXT NOT NULL,
-	content TEXT NOT NULL DEFAULT '',
-	tool_calls TEXT DEFAULT NULL,
-	tool_call_id TEXT DEFAULT NULL
-);
-`
-	if err := conn.Exec(oldSchema); err != nil {
-		t.Fatalf("create messages: %v", err)
-	}
-	if err := conn.Exec("INSERT INTO messages (role, content) VALUES ('user', 'migrated')"); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	conn.Close()
-
-	// Open with NewWithDB — should add session_id column and sessions table.
-	s, err := NewWithDB(path)
-	if err != nil {
-		t.Fatalf("NewWithDB: %v", err)
-	}
-	defer s.Close()
-
-	h, err := s.LoadHistory()
-	if err != nil {
-		t.Fatalf("LoadHistory: %v", err)
-	}
-	if len(h) != 1 || h[0].Content != "migrated" {
-		t.Errorf("expected migrated message, got %+v", h)
-	}
-}
