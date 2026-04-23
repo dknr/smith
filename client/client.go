@@ -281,6 +281,12 @@ func Chat(addr string, logger *slog.Logger) error {
 			break
 		}
 		if strings.TrimSpace(input) == "/reset" {
+			// First compact the session to preserve context before resetting.
+			_, err := sendCommand(conn, logger, "/compact")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				break
+			}
 			newMode, err := sendReset(conn, logger, true)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
