@@ -9,7 +9,25 @@ import (
 	"strings"
 
 	lua "github.com/Shopify/go-lua"
+
+	"smith/types"
 )
+
+// LuaToolDef is the tool definition for "lua".
+var LuaToolDef = types.ToolDef{
+	Name:        "lua",
+	Description: "Execute a Lua script in a sandboxed environment. Exposes string operations and smith.view(path), smith.list(path), and smith.print(...) for read-only file operations and output.",
+	Parameters: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"code": map[string]interface{}{
+				"type":        "string",
+				"description": "Lua script to execute",
+			},
+		},
+		"required": []string{"code"},
+	},
+}
 
 // toolLua executes a Lua script in a sandboxed environment.
 // Exposes smith.view(path), smith.list(path), and smith.print(...)

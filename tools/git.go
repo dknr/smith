@@ -6,7 +6,29 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"smith/types"
 )
+
+// GitToolDef is the tool definition for "git".
+var GitToolDef = types.ToolDef{
+	Name:        "git",
+	Description: "Execute non-destructive git subcommands (e.g. status, diff, log, show, branch, tag, ls-files, blame, grep, remote, rev-parse, describe, for-each-ref, reflog, fsck, count-objects, shortlog).",
+	Parameters: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"command": map[string]interface{}{
+				"type":        "string",
+				"description": "Git subcommand to execute (e.g. 'status', 'log --oneline', 'diff --stat'). Only non-destructive commands are allowed.",
+			},
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Path to the git repository (equivalent to git -C <path>). Optional.",
+			},
+		},
+		"required": []string{"command"},
+	},
+}
 
 // allowedGitCommands is the whitelist of non-destructive git subcommands.
 var allowedGitCommands = map[string]bool{

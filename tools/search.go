@@ -25,7 +25,7 @@ func NewSearchTool(memStore *memory.Store, sess *session.Session) *SearchTool {
 	}
 }
 
-// SearchToolDef is the tool definition for the LLM.
+// SearchToolDef is the tool definition for "search".
 var SearchToolDef = types.ToolDef{
 	Name:        "search",
 	Description: "Search memory and conversation history for relevant information. Returns results from both the agent's long-term memory store and archived session history.",

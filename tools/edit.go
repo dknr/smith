@@ -7,7 +7,37 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"smith/types"
 )
+
+// EditToolDef is the tool definition for "edit".
+var EditToolDef = types.ToolDef{
+	Name:        "edit",
+	Description: "Perform exact-match find-and-replace edits on a file, or create the file if old_string is empty. The path is relative to the working directory and must not contain path traversal.",
+	Parameters: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"file_path": map[string]interface{}{
+				"type":        "string",
+				"description": "Path to the file (relative to working directory)",
+			},
+			"old_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Exact text to find (empty for new files)",
+			},
+			"new_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Replacement text",
+			},
+			"replace_all": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Replace all occurrences (default: false)",
+			},
+		},
+		"required": []string{"file_path", "old_string", "new_string"},
+	},
+}
 
 // toolEdit performs exact-match find-and-replace edits on a file, or creates
 // the file if old_string is empty. The path is relative to the working

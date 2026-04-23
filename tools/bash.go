@@ -6,9 +6,27 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
+
+	"smith/types"
 )
 
 const maxBashOutput = 16384
+
+// BashToolDef is the tool definition for "bash".
+var BashToolDef = types.ToolDef{
+	Name:        "bash",
+	Description: "Execute any shell command.",
+	Parameters: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"command": map[string]interface{}{
+				"type":        "string",
+				"description": "Shell command to execute",
+			},
+		},
+		"required": []string{"command"},
+	},
+}
 
 func toolBash(ctx context.Context, argsJSON string) (string, error) {
 	var p struct {

@@ -5,7 +5,29 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+
+	"smith/types"
 )
+
+// ListToolDef is the tool definition for "list".
+var ListToolDef = types.ToolDef{
+	Name:        "list",
+	Description: "List files and directories in a path.",
+	Parameters: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Path to list (default: current directory)",
+			},
+			"all": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Include hidden files (default: false)",
+			},
+		},
+		"required": []string{},
+	},
+}
 
 func toolList(ctx context.Context, argsJSON string) (string, error) {
 	path := "."
