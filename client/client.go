@@ -24,7 +24,6 @@ func dial(addr string) (*websocket.Conn, error) {
 
 // syncSession connects to the server and requests a session sync.
 // It prints history messages and verifies sync complete.
-// If colorize is true, tool calls are shown in yellow and errors in red.
 // Returns whether the session was new (no prior history) and the current mode.
 func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) (bool, string, error) {
 	req := types.Request{
@@ -42,7 +41,6 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, coloriz
 	}
 	logger.Debug("sent sync request")
 
-	var bufferedKickoff []*types.Response
 	var hasHistory bool
 	var isNew bool
 	for {
@@ -65,24 +63,6 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, coloriz
 				if r.Kickoff != "" {
 					fmt.Fprintf(w, "\033[90m  %s\033[0m\n", r.Kickoff)
 				}
-				// Replay buffered kickoff responses (incremental deltas).
-				var lastContent string
-				for _, br := range bufferedKickoff {
-					if br.Role == "assistant" && br.Content != "" {
-						if len(br.Content) > len(lastContent) {
-							fmt.Fprint(w, br.Content[len(lastContent):])
-						}
-						lastContent = br.Content
-						if br.Done {
-							fmt.Fprintln(w)
-							if colorize && (br.Usage != nil || br.Timing != nil) {
-								printStatsLine(w, br.Usage, br.Timing)
-							}
-						}
-					} else {
-						renderResponse(w, br, colorize)
-					}
-				}
 			}
 			return !hasHistory, mode, nil
 		}
@@ -98,7 +78,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, coloriz
 			continue
 		}
 
-		// For new sessions, buffer kickoff streaming responses.
+		// For new sessions, buffer kickoff responses.
 		if r.Role == "new_session" {
 			printNewSession(w)
 			isNew = true
@@ -106,7 +86,7 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, coloriz
 			continue
 		}
 		if r.Role == "tool_call" || r.Role == "assistant" || r.Role == "error" {
-			bufferedKickoff = append(bufferedKickoff, r)
+			renderResponse(w, r, colorize)
 		}
 	}
 }
@@ -117,7 +97,6 @@ func printNewSession(w io.Writer) {
 }
 
 // renderResponse prints a single Response using the standard format.
-// Used by both syncSession and readLoop for consistent display.
 // Returns the mode if it was updated, or empty string.
 func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 	if r.Command == "mode_change" {
@@ -155,9 +134,13 @@ func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 		}
 		return ""
 	}
-	// assistant: batch print (full content, no delta).
+	// assistant: print with grey foreground (color 90).
 	if r.Content != "" {
-		fmt.Fprintln(w, r.Content)
+		if colorize {
+			fmt.Fprintf(w, "\033[90m%s\033[0m\n", r.Content)
+		} else {
+			fmt.Fprintln(w, r.Content)
+		}
 	}
 	if r.Done && colorize && (r.Usage != nil || r.Timing != nil) {
 		printStatsLine(w, r.Usage, r.Timing)
@@ -165,11 +148,8 @@ func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 	return ""
 }
 
-// readLoop reads streaming responses from the server, printing deltas as they arrive.
-// If colorize is true, tool calls are shown in yellow and errors in red.
-// Returns on error or when done=true is received.
+// readLoop reads responses from the server, printing them until done=true.
 func readLoop(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) error {
-	var lastContent string
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
@@ -183,30 +163,15 @@ func readLoop(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize b
 
 		logger.Debug("received message", "role", r.Role, "done", r.Done, "id", r.ID)
 
-		// Delegate non-assistant roles to renderResponse.
-		if r.Role != "assistant" {
-			renderResponse(w, r, colorize)
-			continue
-		}
-
-		// Assistant: delta printing.
-		if len(r.Content) > len(lastContent) {
-			fmt.Fprint(w, r.Content[len(lastContent):])
-		}
-		lastContent = r.Content
+		renderResponse(w, r, colorize)
 
 		if r.Done {
-			fmt.Fprintln(w)
-			if colorize && (r.Usage != nil || r.Timing != nil) {
-				printStatsLine(w, r.Usage, r.Timing)
-			}
 			return nil
 		}
 	}
 }
 
 // Send connects to the server, sends a message, prints all responses until done, then exits.
-// If colorize is true, tool calls are shown in yellow, errors in red, and stats are printed.
 func Send(addr, message string, logger *slog.Logger, colorize bool) error {
 	conn, err := dial(addr)
 	if err != nil {
@@ -369,7 +334,7 @@ func sendCommand(conn *websocket.Conn, logger *slog.Logger, w io.Writer, input s
 }
 
 // sendReset sends a reset request to the server, prints "New session",
-// and streams the kickoff response. Returns the mode if available.
+// and prints the kickoff response. Returns the mode if available.
 func sendReset(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) (string, error) {
 	req := types.Request{
 		ID:    "0",
@@ -384,9 +349,6 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize 
 		return "", fmt.Errorf("failed to send reset request: %w", err)
 	}
 
-	var bufferedKickoff []*types.Response
-	var bannerPrinted bool
-	var lastContent string
 	var mode string
 	for {
 		_, resp, err := conn.ReadMessage()
@@ -403,45 +365,20 @@ func sendReset(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize 
 			mode = r.Mode
 		}
 
-		// Print "New session" banner once on first assistant chunk.
-		if r.Role == "assistant" && colorize && !bannerPrinted {
+		// Print "New session" banner on first assistant chunk.
+		if r.Role == "assistant" && colorize {
 			printNewSession(w)
-			bannerPrinted = true
 		}
 
-		// Buffer kickoff streaming responses for replay after banner.
-		if r.Role == "tool_call" || r.Role == "assistant" || r.Role == "error" {
-			bufferedKickoff = append(bufferedKickoff, r)
-		}
+		renderResponse(w, r, colorize)
 
-		// Render non-assistant roles immediately.
-		if r.Role != "assistant" {
-			renderResponse(w, r, colorize)
-			continue
-		}
-
-		// Assistant: delta printing (skip done response — already printed).
 		if r.Done {
-			// For batch responses, print any remaining content.
-			if len(r.Content) > len(lastContent) {
-				fmt.Fprint(w, r.Content[len(lastContent):])
-			}
-			fmt.Fprintln(w)
-			if r.Reset && colorize && (r.Usage != nil || r.Timing != nil) {
-				printStatsLine(w, r.Usage, r.Timing)
-			}
 			return mode, nil
 		}
-
-		// Print only the new characters since last response.
-		if len(r.Content) > len(lastContent) {
-			fmt.Fprint(w, r.Content[len(lastContent):])
-		}
-		lastContent = r.Content
 	}
 }
 
-// printStatsLine prints the grey timestamp + token stats line, matching bantam's format.
+// printStatsLine prints the timestamp + token stats line (color 94 = light blue).
 func printStatsLine(w io.Writer, usage *types.ResponseUsage, timing *types.ResponseTiming) {
 	var inputTokens, outputTokens, totalTokens int
 	if usage != nil {
@@ -450,7 +387,7 @@ func printStatsLine(w io.Writer, usage *types.ResponseUsage, timing *types.Respo
 		totalTokens = usage.TotalTokens
 	}
 
-	fmt.Fprintf(w, "\033[90m%s | ", time.Now().Format("15:04:05"))
+	fmt.Fprintf(w, "\033[94m%s | ", time.Now().Format("15:04:05"))
 	if timing != nil && timing.PromptPerSecond > 0 && timing.PredictedPerSecond > 0 {
 		fmt.Fprintf(w, "%d (%.1f/s) => %d (%.1f/s) => %d (%.1fs)",
 			inputTokens, timing.PromptPerSecond,

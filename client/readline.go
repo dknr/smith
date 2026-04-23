@@ -13,8 +13,9 @@ import (
 // library, which handles raw mode, line editing, history, and
 // concurrent output during streaming.
 type Terminal struct {
-	rl      *readline.Instance
-	scanner *bufio.Scanner // only used when readline isn't available (e.g. non-interactive)
+	rl        *readline.Instance
+	scanner   *bufio.Scanner
+	multiline []string
 }
 
 // NewTerminal creates a new Terminal with the given prompt.
