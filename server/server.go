@@ -300,8 +300,23 @@ func syncSession(conn *websocket.Conn, a *agent.Agent, id string, logger, agentL
 			}
 			continue
 		}
-		// Tool responses are internal — not sent to the client in the live path.
+		// Tool responses are now sent to the client.
 		if m.Role == "tool" {
+			resp := types.Response{
+				ID:      id,
+				Role:    "tool",
+				Content: m.Content,
+				Done:    false,
+			}
+			data, err := types.MarshalResponse(resp)
+			if err != nil {
+				logger.Error("failed to marshal tool response", "error", err)
+				return
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				logger.Error("failed to write tool response", "error", err)
+				return
+			}
 			continue
 		}
 		// Regular message (user, assistant text, error).

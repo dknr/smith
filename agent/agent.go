@@ -302,6 +302,12 @@ func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.Call
 			ToolID: tc.ID,
 		})
 		a.mu.Unlock()
+
+		respCh <- &types.Response{
+			Role:   "tool",
+			Content: output,
+			Done:    false,
+		}
 		toolCount++
 	}
 	return toolCount

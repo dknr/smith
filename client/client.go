@@ -130,7 +130,7 @@ func renderResponse(r *types.Response, colorize bool) string {
 	}
 	if r.Role == "tool_call" {
 		if colorize {
-			fmt.Printf("\033[33m%s\033[0m\n", r.Content)
+			fmt.Printf("\033[2;34m%s\033[0m\n", r.Content)
 		}
 		return ""
 	}
@@ -148,7 +148,11 @@ func renderResponse(r *types.Response, colorize bool) string {
 		return ""
 	}
 	if r.Role == "tool" {
-		fmt.Println(r.Content)
+		if colorize {
+			fmt.Printf("\033[2;36m%s\033[0m\n", r.Content)
+		} else {
+			fmt.Println(r.Content)
+		}
 		return ""
 	}
 	// assistant: batch print (full content, no delta).
