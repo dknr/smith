@@ -14,8 +14,8 @@ import (
 func TestRegistry_Definitions(t *testing.T) {
 	r := NewRegistry()
 	defs := r.Definitions()
-	if len(defs) != 4 {
-		t.Fatalf("expected 4 tool definitions in safe mode, got %d", len(defs))
+	if len(defs) != 5 {
+		t.Fatalf("expected 5 tool definitions in safe mode, got %d", len(defs))
 	}
 
 	names := make(map[string]bool)
@@ -25,7 +25,7 @@ func TestRegistry_Definitions(t *testing.T) {
 			t.Errorf("tool %s has empty description", d.Name)
 		}
 	}
-	for _, want := range []string{"time", "list", "view", "lua"} {
+	for _, want := range []string{"time", "list", "view", "lua", "search"} {
 		if !names[want] {
 			t.Errorf("missing tool definition: %s", want)
 		}
@@ -47,15 +47,15 @@ func TestRegistry_Definitions_EditMode(t *testing.T) {
 	r := NewRegistry()
 	r.SetMode("edit")
 	defs := r.Definitions()
-	if len(defs) != 6 {
-		t.Fatalf("expected 6 tool definitions in edit mode, got %d", len(defs))
+	if len(defs) != 7 {
+		t.Fatalf("expected 7 tool definitions in edit mode, got %d", len(defs))
 	}
 
 	names := make(map[string]bool)
 	for _, d := range defs {
 		names[d.Name] = true
 	}
-	for _, want := range []string{"time", "list", "view", "lua", "git", "edit"} {
+	for _, want := range []string{"time", "list", "view", "lua", "git", "edit", "search"} {
 		if !names[want] {
 			t.Errorf("missing tool definition: %s", want)
 		}
@@ -66,15 +66,15 @@ func TestRegistry_Definitions_FullMode(t *testing.T) {
 	r := NewRegistry()
 	r.SetMode("full")
 	defs := r.Definitions()
-	if len(defs) != 7 {
-		t.Fatalf("expected 7 tool definitions in full mode, got %d", len(defs))
+	if len(defs) != 8 {
+		t.Fatalf("expected 8 tool definitions in full mode, got %d", len(defs))
 	}
 
 	names := make(map[string]bool)
 	for _, d := range defs {
 		names[d.Name] = true
 	}
-	for _, want := range []string{"time", "list", "view", "lua", "git", "edit", "bash"} {
+	for _, want := range []string{"time", "list", "view", "lua", "git", "edit", "bash", "search"} {
 		if !names[want] {
 			t.Errorf("missing tool definition: %s", want)
 		}

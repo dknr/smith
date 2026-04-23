@@ -181,6 +181,10 @@ var toolDefs = map[string]types.ToolDef{
 					"type":        "string",
 					"description": "Git subcommand to execute (e.g. 'status', 'log --oneline', 'diff --stat'). Only non-destructive commands are allowed.",
 				},
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Path to the git repository (equivalent to git -C <path>). Optional.",
+				},
 			},
 			"required": []string{"command"},
 		},

@@ -45,6 +45,7 @@ var allowedGitCommands = map[string]bool{
 func toolGit(ctx context.Context, argsJSON string) (string, error) {
 	var p struct {
 		Command string `json:"command"`
+		Path    string `json:"path"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
@@ -72,7 +73,14 @@ func toolGit(ctx context.Context, argsJSON string) (string, error) {
 		return "", fmt.Errorf("git subcommand %q is not allowed (only non-destructive commands)", subcmd)
 	}
 
-	cmd := exec.CommandContext(ctx, "git", parts...)
+	// Build the git command with optional -C path flag.
+	var gitArgs []string
+	if p.Path != "" {
+		gitArgs = append(gitArgs, "-C", p.Path)
+	}
+	gitArgs = append(gitArgs, parts...)
+
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s failed: %w%s", subcmd, err, string(output))
