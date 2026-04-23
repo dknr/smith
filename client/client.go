@@ -230,6 +230,25 @@ func Send(addr, message string, logger *slog.Logger, colorize bool) error {
 	return readLoop(conn, logger, colorize)
 }
 
+// modePrompt returns the colored prompt prefix based on the current mode.
+func modePrompt(mode string) string {
+	if mode == "" {
+		return "> "
+	}
+	var color string
+	switch mode {
+	case "safe":
+		color = "\033[32m" // green foreground
+	case "edit":
+		color = "\033[36m" // cyan foreground
+	case "full":
+		color = "\033[31m" // red foreground
+	default:
+		color = "\033[90m" // grey foreground
+	}
+	return color + "[" + mode + "]" + "\033[0m > "
+}
+
 // Chat starts an interactive session with the server.
 // Type messages to send, /quit to exit.
 func Chat(addr string, logger *slog.Logger) error {
@@ -250,11 +269,7 @@ func Chat(addr string, logger *slog.Logger) error {
 	msgID := 0
 
 	for {
-		prompt := "> "
-		if mode != "" {
-			prompt = "[" + mode + "] "
-		}
-		fmt.Print(prompt)
+		fmt.Print(modePrompt(mode))
 		if !scanner.Scan() {
 			fmt.Println()
 			logger.Debug("input stream ended, exiting")
