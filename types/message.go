@@ -29,7 +29,7 @@ type ToolDef struct {
 	Parameters  map[string]interface{} `json:"-"`
 }
 
-// MarshalJSON encodes ToolDef in the OpenAI-compatible format:
+// MarshalJSON encodes ToolDef in the standard chat format:
 // {"type":"function","function":{"name":"...","description":"...","parameters":{...}}}
 func (t ToolDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]interface{}{

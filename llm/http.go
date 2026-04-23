@@ -13,7 +13,7 @@ import (
 	"smith/types"
 )
 
-// HTTPProvider implements Provider by calling an OpenAI-compatible HTTP API.
+// HTTPProvider implements Provider by calling a chat-completions HTTP API.
 type HTTPProvider struct {
 	BaseURL      string
 	APIKey       string
@@ -60,12 +60,12 @@ type chatRequest struct {
 type msgEntry struct {
 	Role      string           `json:"role"`
 	Content   string           `json:"content"`
-	ToolCalls []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCalls []toolCallPayload `json:"tool_calls,omitempty"`
 	ToolID    string           `json:"tool_call_id,omitempty"`
 }
 
-// openAIToolCall serializes tool calls in the OpenAI nested format.
-type openAIToolCall struct {
+// toolCallPayload serializes tool calls in the standard nested format.
+type toolCallPayload struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
 	Function struct {
@@ -74,8 +74,8 @@ type openAIToolCall struct {
 	} `json:"function"`
 }
 
-func msgToOpenAI(tc types.ToolCall) openAIToolCall {
-	return openAIToolCall{
+func msgToToolCall(tc types.ToolCall) toolCallPayload {
+	return toolCallPayload{
 		ID:   tc.ID,
 		Type: "function",
 		Function: struct {
@@ -98,7 +98,7 @@ type nonStreamMessage struct {
 	ToolCalls []toolCallEntry `json:"tool_calls,omitempty"`
 }
 
-// toolCallEntry parses the OpenAI format: {"type":"function","function":{"id":"...","name":"...","arguments":"..."}}
+// toolCallEntry parses the standard format: {"type":"function","function":{"id":"...","name":"...","arguments":"..."}}
 type toolCallEntry struct {
 	Type     string `json:"type"`
 	Function struct {
@@ -159,7 +159,7 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 			ToolID:  m.ToolID,
 		}
 		for _, tc := range m.ToolCalls {
-			me.ToolCalls = append(me.ToolCalls, msgToOpenAI(tc))
+			me.ToolCalls = append(me.ToolCalls, msgToToolCall(tc))
 		}
 		msgs = append(msgs, me)
 	}
