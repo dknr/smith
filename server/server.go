@@ -179,20 +179,27 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				continue
 			}
 
-			for resp := range respCh {
-				resp.ID = req.ID
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for resp := range respCh {
+					resp.ID = req.ID
 
-				data, err := types.MarshalResponse(*resp)
-				if err != nil {
-					logger.Error("failed to marshal response", "error", err)
-					break
-				}
+					data, err := types.MarshalResponse(*resp)
+					if err != nil {
+						logger.Error("failed to marshal response", "error", err)
+						return
+					}
 
-				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-					logger.Error("failed to write response", "error", err)
-					break
+					if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+						logger.Error("failed to write response", "error", err)
+						return
+					}
 				}
-			}
+			}()
+			wg.Wait()
+			continue
 		}
 
 		conn.Close()
