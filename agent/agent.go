@@ -78,6 +78,173 @@ func toolPreview(output string) string {
 // compactPrompt is the default prompt used when summarizing a session for /compact.
 const compactPrompt = "Condense the following conversation into a summary. Preserve facts, decisions, and tool outcomes that may be relevant later. Discard formatting artifacts and redundant output."
 
+// CompactAndReset performs a session compact followed by a reset and optional
+// kickoff in a single atomic flow. It returns a merged response channel that
+// streams the compact summary first, then the kickoff exchange (if provided).
+// Done is only sent after all responses are complete.
+func (a *Agent) CompactAndReset(ctx context.Context, kickoff string) (<-chan *types.Response, error) {
+	respCh := make(chan *types.Response, 10)
+
+	go func() {
+		defer close(respCh)
+
+		// Step 1: Build transcript and call provider to summarize.
+		a.mu.Lock()
+		transcript := buildTranscript(a.history)
+		a.mu.Unlock()
+
+		result, err := a.provider.Call(ctx, []types.Message{
+			{Role: "system", Content: compactPrompt},
+			{Role: "user", Content: "Summarize the following conversation:\n\n" + transcript},
+		}, nil)
+		if err != nil {
+			a.logger.Error("compact provider error", "error", err)
+			respCh <- &types.Response{
+				Role:    "error",
+				Content: err.Error(),
+				Done:    true,
+			}
+			return
+		}
+
+		// Step 2: Archive current session.
+		if a.session != nil {
+			if _, err := a.session.ArchiveCurrent(); err != nil {
+				a.logger.Error("failed to archive session during compact", "error", err)
+				respCh <- &types.Response{
+					Role:    "error",
+					Content: fmt.Sprintf("Failed to archive session: %v", err),
+					Done:    true,
+				}
+				return
+			}
+		}
+
+		// Step 3: Insert summary as first message and clear history.
+		summary := result.Text
+		a.mu.Lock()
+		a.history = []types.Message{{Role: "assistant", Content: summary}}
+		a.mu.Unlock()
+
+		if a.session != nil {
+			if err := a.session.Append(types.Message{Role: "assistant", Content: summary}); err != nil {
+				a.logger.Error("failed to save compact summary", "error", err)
+			}
+		}
+
+		// Save summary to long-term memory.
+		if a.memStore != nil {
+			tags := "summary,auto-generated," + time.Now().Format("2006-01-02")
+			_, err := a.memStore.Add(summary, "context", tags)
+			if err != nil {
+				a.logger.Error("failed to save compact summary to memory", "error", err)
+			}
+		}
+
+		// Stream compact summary to client.
+		respCh <- &types.Response{
+			Role:    "assistant",
+			Content: summary,
+			Done:    false,
+		}
+
+		// Step 4: Reset turn sequence.
+		a.turnSeq.Store(0)
+
+		// Step 5: Process kickoff if provided.
+		if kickoff != "" {
+			// Append kickoff as user message and record start index.
+			a.mu.Lock()
+			a.history = append(a.history, types.Message{Role: "user", Content: kickoff})
+			startLen := len(a.history) - 1
+			a.mu.Unlock()
+
+			// Process kickoff through agent loop.
+			a.processKickoff(ctx, kickoff, startLen, respCh)
+		} else {
+			// No kickoff — send reset marker.
+			respCh <- &types.Response{Role: "reset", Done: true}
+		}
+	}()
+
+	return respCh, nil
+}
+
+// processKickoff handles the kickoff message through the agent loop,
+// streaming responses to the provided channel. This runs synchronously
+// and blocks until all responses are complete. The kickoff user message
+// must already be appended to history by the caller. startLen is the
+// index in history where the kickoff message was appended (used for
+// session persistence to avoid saving the compact summary).
+func (a *Agent) processKickoff(ctx context.Context, kickoff string, startLen int, respCh chan<- *types.Response) {
+	turn := a.turnSeq.Add(1)
+	a.logger.Info("turn", "turn", turn, "content", kickoff)
+
+	const maxCalls = 50
+	var toolCount int
+	var callCount int
+	var outputTokens int
+	start := time.Now()
+
+	for {
+		callCount++
+		if callCount > maxCalls {
+			respCh <- &types.Response{
+				Role:    "error",
+				Content: fmt.Sprintf("Agent exceeded maximum tool calls (%d).", maxCalls),
+				Done:    true,
+			}
+			return
+		}
+
+		result, err := a.provider.Call(ctx, a.history, a.executor.Definitions())
+		if err != nil {
+			a.logger.Error("provider error", "error", err)
+			respCh <- &types.Response{
+				Role:    "error",
+				Content: err.Error(),
+				Done:    true,
+			}
+			return
+		}
+
+		stats := callStats(result.Usage, result.Timing)
+		a.logger.Info("provider call", "turn", turn, "call", callCount, "stats", stats)
+
+		if len(result.ToolCalls) > 0 {
+			if result.Usage != nil {
+				outputTokens += result.Usage.CompletionTokens
+			}
+			toolCount = a.handleToolCalls(turn, ctx, result, respCh, toolCount)
+			continue
+		}
+
+		if result.Usage != nil {
+			outputTokens += result.Usage.CompletionTokens
+		}
+		if result.Text == "" {
+			respCh <- &types.Response{
+				Role:    "error",
+				Content: "model returned empty response with no tool calls",
+				Done:    true,
+			}
+			return
+		}
+		a.streamText(ctx, result.Text, result.Usage, result.Timing, respCh)
+
+		if a.session != nil {
+			a.mu.Lock()
+			if err := a.session.Append(a.history[startLen:]...); err != nil {
+				a.logger.Error("failed to save session", "error", err)
+			}
+			a.mu.Unlock()
+		}
+
+		a.logger.Info("turn complete", "turn", turn, "calls", callCount, "tools", toolCount, "output_tokens", outputTokens, "duration", time.Since(start).Round(time.Millisecond))
+		return
+	}
+}
+
 // Compact prompts the LLM to summarize the current session, archives the current
 // session, creates a new one with the summary as its first message, and returns
 // the summary via a response channel. If the provider call fails, the current

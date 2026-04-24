@@ -235,22 +235,13 @@ func Chat(addr string, logger *slog.Logger, term *Terminal) error {
 			break
 		}
 		if strings.TrimSpace(input) == "/reset" {
-			// First compact the session to preserve context before resetting.
-			newMode, err := sendCommand(conn, logger, term.Stdout(), "/compact")
-			if err != nil {
-				fmt.Fprintf(term.Stderr(), "error: %v\n", err)
-				break
-			}
-			newMode2, err := sendReset(conn, logger, term.Stdout(), true)
+			newMode, err := sendCommand(conn, logger, term.Stdout(), "/reset")
 			if err != nil {
 				fmt.Fprintf(term.Stderr(), "error: %v\n", err)
 				break
 			}
 			if newMode != "" {
 				mode = newMode
-			}
-			if newMode2 != "" {
-				mode = newMode2
 			}
 			continue
 		}
@@ -327,51 +318,6 @@ func sendCommand(conn *websocket.Conn, logger *slog.Logger, w io.Writer, input s
 		if newMode != "" {
 			mode = newMode
 		}
-		if r.Done {
-			return mode, nil
-		}
-	}
-}
-
-// sendReset sends a reset request to the server, prints "New session",
-// and prints the kickoff response. Returns the mode if available.
-func sendReset(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) (string, error) {
-	req := types.Request{
-		ID:    "0",
-		Reset: true,
-	}
-	data, err := types.MarshalRequest(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal reset request: %w", err)
-	}
-
-	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		return "", fmt.Errorf("failed to send reset request: %w", err)
-	}
-
-	var mode string
-	for {
-		_, resp, err := conn.ReadMessage()
-		if err != nil {
-			return "", fmt.Errorf("failed to read reset response: %w", err)
-		}
-
-		r, err := types.UnmarshalResponse(resp)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse reset response: %w", err)
-		}
-
-		if r.Mode != "" {
-			mode = r.Mode
-		}
-
-		// Print "New session" banner on first assistant chunk.
-		if r.Role == "assistant" && colorize {
-			printNewSession(w)
-		}
-
-		renderResponse(w, r, colorize)
-
 		if r.Done {
 			return mode, nil
 		}

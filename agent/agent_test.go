@@ -19,14 +19,17 @@ import (
 
 // fakeProvider satisfies llm.Provider by feeding predetermined tokens or calls.
 type fakeProvider struct {
-	tokens    []string
-	callText  string
-	callTools []types.ToolCall
-	callErr   error
+	tokens       []string
+	callText     string
+	callTexts    []string
+	callTools    []types.ToolCall
+	callErr      error
+	callCount    int
+	callErrAfter int // number of successful calls before returning error
 }
 
 func (f *fakeProvider) Complete(ctx context.Context, messages []types.Message) (<-chan string, error) {
-	if f.callErr != nil {
+	if f.callErr != nil && f.callCount >= f.callErrAfter {
 		return nil, f.callErr
 	}
 	ch := make(chan string, len(f.tokens))
@@ -38,13 +41,17 @@ func (f *fakeProvider) Complete(ctx context.Context, messages []types.Message) (
 }
 
 func (f *fakeProvider) Call(ctx context.Context, messages []types.Message, toolDefs []types.ToolDef) (llm.CallResult, error) {
-	if f.callErr != nil {
+	if f.callErr != nil && f.callCount >= f.callErrAfter {
 		return llm.CallResult{}, f.callErr
 	}
 	if len(f.callTools) > 0 {
 		tools := f.callTools
 		f.callTools = nil
 		return llm.CallResult{ToolCalls: tools}, nil
+	}
+	f.callCount++
+	if f.callCount <= len(f.callTexts) {
+		return llm.CallResult{Text: f.callTexts[f.callCount-1]}, nil
 	}
 	return llm.CallResult{Text: f.callText}, nil
 }
@@ -736,5 +743,154 @@ func TestBuildTranscript_empty(t *testing.T) {
 	got := buildTranscript(nil)
 	if got != "" {
 		t.Errorf("buildTranscript(nil) = %q, want empty string", got)
+	}
+}
+
+func TestCompactAndReset_withKickoff(t *testing.T) {
+	sess, _ := session.New()
+	defer sess.Close()
+
+	// Use a provider that can return different values for different calls.
+	// callTexts is consumed in order: ProcessMessage call, Compact call, Kickoff call.
+	fp := &fakeProvider{
+		callTexts: []string{"dummy", "session summary", "kickoff answer"},
+	}
+	a := New(fp, tools.NewRegistry(), sess, slog.Default(), nil)
+
+	// Build some history (consumes first callTexts entry).
+	respCh, _ := a.ProcessMessage(context.Background(), "question")
+	for range respCh {}
+
+	// CompactAndReset with kickoff.
+	respCh, err := a.CompactAndReset(context.Background(), "kickoff message")
+	if err != nil {
+		t.Fatalf("CompactAndReset: %v", err)
+	}
+
+	var responses []*types.Response
+	for r := range respCh {
+		responses = append(responses, r)
+	}
+
+	if len(responses) != 2 {
+		t.Fatalf("expected 2 responses (summary + kickoff answer), got %d", len(responses))
+	}
+	if responses[0].Role != "assistant" || responses[0].Content != "session summary" {
+		t.Errorf("first response = %+v, want {assistant, session summary}", responses[0])
+	}
+	if responses[0].Done {
+		t.Error("expected done=false for compact summary")
+	}
+	if responses[1].Role != "assistant" || responses[1].Content != "kickoff answer" {
+		t.Errorf("second response = %+v, want {assistant, kickoff answer}", responses[1])
+	}
+	if !responses[1].Done {
+		t.Error("expected done=true for final response")
+	}
+
+	// History should contain summary + kickoff exchange.
+	h := a.History()
+	if len(h) != 3 {
+		t.Fatalf("expected 3 messages after compact+reset+kickoff, got %d", len(h))
+	}
+	if h[0].Role != "assistant" || h[0].Content != "session summary" {
+		t.Errorf("history[0] = %+v, want {assistant, session summary}", h[0])
+	}
+	if h[1].Role != "user" || h[1].Content != "kickoff message" {
+		t.Errorf("history[1] = %+v, want {user, kickoff message}", h[1])
+	}
+	if h[2].Role != "assistant" || h[2].Content != "kickoff answer" {
+		t.Errorf("history[2] = %+v, want {assistant, kickoff answer}", h[2])
+	}
+}
+
+func TestCompactAndReset_withoutKickoff(t *testing.T) {
+	sess, _ := session.New()
+	defer sess.Close()
+
+	a := New(&fakeProvider{callText: "session summary"}, tools.NewRegistry(), sess, slog.Default(), nil)
+
+	// Build some history.
+	respCh, _ := a.ProcessMessage(context.Background(), "question")
+	for range respCh {}
+
+	// CompactAndReset without kickoff.
+	respCh, err := a.CompactAndReset(context.Background(), "")
+	if err != nil {
+		t.Fatalf("CompactAndReset: %v", err)
+	}
+
+	var responses []*types.Response
+	for r := range respCh {
+		responses = append(responses, r)
+	}
+
+	if len(responses) != 2 {
+		t.Fatalf("expected 2 responses (summary + reset marker), got %d", len(responses))
+	}
+	if responses[0].Role != "assistant" || responses[0].Content != "session summary" {
+		t.Errorf("first response = %+v, want {assistant, session summary}", responses[0])
+	}
+	if responses[0].Done {
+		t.Error("expected done=false for compact summary")
+	}
+	if responses[1].Role != "reset" || !responses[1].Done {
+		t.Errorf("second response = %+v, want {reset, done=true}", responses[1])
+	}
+
+	// History should contain only the summary.
+	h := a.History()
+	if len(h) != 1 {
+		t.Fatalf("expected 1 message after compact+reset, got %d", len(h))
+	}
+	if h[0].Role != "assistant" || h[0].Content != "session summary" {
+		t.Errorf("history[0] = %+v, want {assistant, session summary}", h[0])
+	}
+}
+
+func TestCompactAndReset_providerError(t *testing.T) {
+	sess, _ := session.New()
+	defer sess.Close()
+
+	// Provider succeeds on ProcessMessage (call 1), errors on CompactAndReset (call 2).
+	fp := &fakeProvider{
+		callText:     "answer",
+		callErr:      context.Canceled,
+		callErrAfter: 1, // error after 1 successful call
+	}
+	a := New(fp, tools.NewRegistry(), sess, slog.Default(), nil)
+
+	// Build some history.
+	respCh, _ := a.ProcessMessage(context.Background(), "question")
+	for range respCh {}
+
+	// CompactAndReset with provider error.
+	respCh, err := a.CompactAndReset(context.Background(), "kickoff message")
+	if err != nil {
+		t.Fatalf("CompactAndReset: %v", err)
+	}
+
+	var responses []*types.Response
+	for r := range respCh {
+		responses = append(responses, r)
+	}
+
+	if len(responses) != 1 {
+		t.Fatalf("expected 1 response (error), got %d", len(responses))
+	}
+	if responses[0].Role != "error" {
+		t.Errorf("response role = %q, want %q", responses[0].Role, "error")
+	}
+	if !strings.Contains(responses[0].Content, "context canceled") {
+		t.Errorf("expected error content, got %q", responses[0].Content)
+	}
+	if !responses[0].Done {
+		t.Error("expected done=true for error response")
+	}
+
+	// History should be unchanged.
+	h := a.History()
+	if len(h) != 2 {
+		t.Fatalf("expected 2 messages (unchanged), got %d", len(h))
 	}
 }

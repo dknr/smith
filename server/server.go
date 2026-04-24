@@ -109,16 +109,11 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				continue
 			}
 
-			if req.Reset {
+			if req.Content == "/reset" {
 				logger.Info("session reset requested")
-				if a.Session() != nil {
-					if _, err := a.Session().ArchiveCurrent(); err != nil {
-						logger.Error("failed to archive session", "error", err)
-					}
-				}
-				respCh, err := a.Reset(r.Context(), cfg.Kickoff)
+				respCh, err := a.CompactAndReset(r.Context(), cfg.Kickoff)
 				if err != nil {
-					logger.Error("reset error", "error", err)
+					logger.Error("compact and reset error", "error", err)
 					continue
 				}
 				for resp := range respCh {
@@ -142,28 +137,6 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 
 			if req.Mode != "" {
 				handleModeCommand(conn, req.ID, req.Mode, a, logger)
-				continue
-			}
-
-			if req.Content == "/compact" {
-				logger.Info("session compact requested")
-				respCh, err := a.Compact(r.Context())
-				if err != nil {
-					logger.Error("compact error", "error", err)
-					continue
-				}
-				for resp := range respCh {
-					resp.ID = req.ID
-					data, err := types.MarshalResponse(*resp)
-					if err != nil {
-						logger.Error("failed to marshal compact response", "error", err)
-						break
-					}
-					if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-						logger.Error("failed to write compact response", "error", err)
-						break
-					}
-				}
 				continue
 			}
 
