@@ -15,6 +15,8 @@ type Config struct {
 	Model        string `toml:"model"`
 	SystemPrompt string `toml:"system_prompt"`
 	Kickoff      string `toml:"kickoff"`
+	ProviderType string `toml:"provider_type"`
+	ReasoningEffort string `toml:"reasoning_effort"`
 }
 
 // configName is the name of the config file.

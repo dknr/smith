@@ -22,6 +22,13 @@ type HTTPProvider struct {
 	Tools        []types.ToolDef
 	DebugLogger  *slog.Logger
 	TurnLogger   *TurnLogger
+	// ProviderType indicates which LLM backend we are talking to.
+	// Supported values: "llamacpp", "trtllm"
+	ProviderType string
+	// ReasoningEffort is the reasoning effort level (low, medium, high).
+	// For llamacpp, this is mapped to a token budget (thinking_budget_tokens).
+	// For trtllm, this is sent as the reasoning_effort field.
+	ReasoningEffort string
 }
 
 // defaultTimeout is the HTTP client timeout for provider requests.
@@ -50,11 +57,12 @@ func (p *HTTPProvider) logDebug(ctx context.Context, method, url string, reqBody
 
 // chatRequest is the JSON request body for the chat completions endpoint.
 type chatRequest struct {
-	Model          string          `json:"model"`
-	Messages       []msgEntry      `json:"messages"`
-	Stream         bool            `json:"stream"`
-	Tools          []types.ToolDef `json:"tools,omitempty"`
-	ThinkingBudget int             `json:"thinking_budget_tokens,omitempty"`
+	Model               string          `json:"model"`
+	Messages            []msgEntry      `json:"messages"`
+	Stream              bool            `json:"stream"`
+	Tools               []types.ToolDef `json:"tools,omitempty"`
+	ThinkingBudget      *int            `json:"thinking_budget_tokens,omitempty"`
+	ReasoningEffort     *string         `json:"reasoning_effort,omitempty"`
 }
 
 type msgEntry struct {
@@ -164,12 +172,37 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 		msgs = append(msgs, me)
 	}
 
+	// Prepare reasoning parameters based on provider type
+	var thinkingBudget *int
+	var reasoningEffort *string
+	
+	if p.ProviderType == "llamacpp" {
+		// Map reasoning effort to thinking budget for llama.cpp
+		var budget int
+		switch p.ReasoningEffort {
+		case "low":
+			budget = 4096
+		case "medium":
+			budget = 8192
+		case "high":
+			budget = 16384
+		default:
+			budget = defaultReasoningBudget // fallback to default
+		}
+		thinkingBudget = &budget
+	} else if p.ProviderType == "trtllm" {
+		// Send reasoning effort directly for TensorRT-LLM
+		reasoningEffort = &p.ReasoningEffort
+	}
+	// For other providers or empty type, don't set either (could add defaults later)
+
 	body := chatRequest{
 		Model:          p.Model,
 		Messages:       msgs,
 		Stream:         false,
 		Tools:          tools,
-		ThinkingBudget: defaultReasoningBudget,
+		ThinkingBudget: thinkingBudget,
+		ReasoningEffort: reasoningEffort,
 	}
 
 	data, err := json.Marshal(body)

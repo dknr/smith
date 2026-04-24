@@ -16,6 +16,16 @@ func NewProvider(cfg *config.Config, exec tools.Executor, debugLogger *slog.Logg
 	if len(defs) > 0 {
 		toolDefs = defs[0]
 	}
+	// Set default reasoning effort to "low" if not provided
+	reasoningEffort := cfg.ReasoningEffort
+	if reasoningEffort == "" {
+		reasoningEffort = "low"
+	}
+	// Set default provider type to "llamacpp" if not provided
+	providerType := cfg.ProviderType
+	if providerType == "" {
+		providerType = "llamacpp"
+	}
 	return &HTTPProvider{
 		BaseURL:      cfg.BaseURL,
 		APIKey:       cfg.APIKey,
@@ -24,5 +34,7 @@ func NewProvider(cfg *config.Config, exec tools.Executor, debugLogger *slog.Logg
 		Tools:        toolDefs,
 		DebugLogger:  debugLogger,
 		TurnLogger:   turnLogger,
+		ProviderType: providerType,
+		ReasoningEffort: reasoningEffort,
 	}
 }
