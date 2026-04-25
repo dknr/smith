@@ -555,3 +555,190 @@ func TestFormatMarkdown_MultipleCodeBlocks(t *testing.T) {
 		t.Errorf("FormatMarkdown(%q) = %q, want %q", input, got, expected)
 	}
 }
+
+func TestFormatMarkdown_Strikethrough(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple strikethrough",
+			input:    "~~deleted text~~",
+			expected: "\033[1;2mdeleted text\033[0m",
+		},
+		{
+			name:     "strikethrough with surrounding text",
+			input:    "prefix ~~deleted~~ suffix",
+			expected: "prefix \033[1;2mdeleted\033[0m suffix",
+		},
+		{
+			name:     "multiple strikethroughs",
+			input:    "~~first~~ and ~~second~~",
+			expected: "\033[1;2mfirst\033[0m and \033[1;2msecond\033[0m",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatMarkdown(tt.input)
+			if got != tt.expected {
+				t.Errorf("FormatMarkdown(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatMarkdown_Blockquote(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple blockquote",
+			input:    "> quoted text",
+			expected: "\033[90m│ \033[0mquoted text",
+		},
+		{
+			name:     "blockquote with surrounding text",
+			input:    "before\n> quoted\nafter",
+			expected: "before\n\033[90m│ \033[0mquoted\nafter",
+		},
+		{
+			name:     "multiple blockquotes",
+			input:    "> first\n> second",
+			expected: "\033[90m│ \033[0mfirst\n\033[90m│ \033[0msecond",
+		},
+		{
+			name:     "not a blockquote (no space after >)",
+			input:    ">not a blockquote",
+			expected: ">not a blockquote",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatMarkdown(tt.input)
+			if got != tt.expected {
+				t.Errorf("FormatMarkdown(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatMarkdown_NumberedList(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple numbered list",
+			input:    "1. first item",
+			expected: "\033[32m→ \033[0mfirst item",
+		},
+		{
+			name:     "multiple numbered items",
+			input:    "1. first\n2. second\n3. third",
+			expected: "\033[32m→ \033[0mfirst\n\033[32m→ \033[0msecond\n\033[32m→ \033[0mthird",
+		},
+		{
+			name:     "numbered list with text before",
+			input:    "prefix 1. not a list",
+			expected: "prefix 1. not a list",
+		},
+		{
+			name:     "numbered list with bold",
+			input:    "1. **bold item**",
+			expected: "\033[32m→ \033[0m\033[1mbold item\033[0m",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatMarkdown(tt.input)
+			if got != tt.expected {
+				t.Errorf("FormatMarkdown(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatMarkdown_Table(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple table",
+			input:    "| Name | Value |\n|------|-------|\n| foo | bar |",
+			expected: "\033[1m| Name | Value |\033[0m\n|------|-------|\n| foo | bar |",
+		},
+		{
+			name:     "table with bold header",
+			input:    "| **Header** | Col |\n|------------|-----|\n| data | x |",
+			expected: "\033[1m| \033[1mHeader\033[0m | Col |\033[0m\n|------------|-----|\n| data | x |",
+		},
+		{
+			name:     "table with varying column widths",
+			input:    "| A | Long Column |\n|---|-------------|\n| 1 | value |",
+			expected: "\033[1m| A | Long Column |\033[0m\n|---|-------------|\n| 1 | value |",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatMarkdown(tt.input)
+			if got != tt.expected {
+				t.Errorf("FormatMarkdown(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatMarkdown_TableWithFormatting(t *testing.T) {
+	input := "| **Name** | Status |\n|----------|--------|\n| server | **OK** |"
+	got := FormatMarkdown(input)
+
+	// Check header is bold
+	if !strings.Contains(got, "\033[1m| \033[1mName\033[0m") {
+		t.Errorf("missing bold header in %q", got)
+	}
+	// Check cell bold is preserved
+	if !strings.Contains(got, "\033[1mOK\033[0m") {
+		t.Errorf("missing bold cell in %q", got)
+	}
+}
+
+func TestFormatMarkdown_UnclosedCodeBlock(t *testing.T) {
+	input := "text before\n```\nunclosed code"
+	got := FormatMarkdown(input)
+	expected := "text before\n\033[90munclosed code\033[0m"
+	if got != expected {
+		t.Errorf("FormatMarkdown(%q) = %q, want %q", input, got, expected)
+	}
+}
+
+func TestFormatMarkdown_MixedFeatures(t *testing.T) {
+	input := "# Title\n\n> A quoted **bold** statement.\n\n1. First item\n2. Second ~~strikethrough~~ item\n\n| Col1 | Col2 |\n|------|------|\n| a    | b    |\n\n```\ncode block\n```"
+	got := FormatMarkdown(input)
+
+	// Check each feature is present
+	expecteds := []string{
+		"\033[1m\033[4m\033[94mTitle\033[0m",
+		"\033[90m│ \033[0m",
+		"\033[1mbold\033[0m",
+		"\033[32m→ \033[0mFirst item",
+		"\033[1;2mstrikethrough\033[0m",
+		"\033[1m| Col1",
+		"\033[90mcode block\033[0m",
+	}
+
+	for _, exp := range expecteds {
+		if !strings.Contains(got, exp) {
+			t.Errorf("missing %q in %q", exp, got)
+		}
+	}
+}
