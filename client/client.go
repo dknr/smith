@@ -171,10 +171,10 @@ func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 		printStatsLine(w, r.Usage, r.Timing)
 		return ""
 	}
-	// assistant: print with grey foreground (color 90).
+	// assistant: print with markdown formatting.
 	if r.Content != "" {
 		if colorize {
-			fmt.Fprintf(w, "\033[90m%s\033[0m\n", r.Content)
+			fmt.Fprintln(w, FormatMarkdown(r.Content))
 		} else {
 			fmt.Fprintln(w, r.Content)
 		}
