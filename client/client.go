@@ -108,8 +108,25 @@ func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 		return r.Mode
 	}
 	if r.Role == "tool_call" {
+		truncated, remaining, origLines, origBytes, byTruncated := truncateContent(r.Content, 2048, 15)
 		if colorize {
-			fmt.Fprintf(w, "\033[2;34m%s\033[0m\n", r.Content)
+			fmt.Fprintf(w, "\033[2;34m%s\033[0m\n", truncated)
+			if byTruncated && remaining > 0 {
+				fmt.Fprintf(w, "\033[90m[truncated - 15/%d lines, 2048/%d bytes]\033[0m\n", origLines, origBytes)
+			} else if byTruncated {
+				fmt.Fprintf(w, "\033[90m[truncated - 2048/%d bytes]\033[0m\n", origBytes)
+			} else if remaining > 0 {
+				fmt.Fprintf(w, "\033[90m[truncated - 15/%d lines]\033[0m\n", origLines)
+			}
+		} else {
+			fmt.Fprintln(w, truncated)
+			if byTruncated && remaining > 0 {
+				fmt.Fprintln(w, fmt.Sprintf("[truncated - 15/%d lines, 2048/%d bytes]", origLines, origBytes))
+			} else if byTruncated {
+				fmt.Fprintln(w, fmt.Sprintf("[truncated - 2048/%d bytes]", origBytes))
+			} else if remaining > 0 {
+				fmt.Fprintln(w, fmt.Sprintf("[truncated - 15/%d lines]", origLines))
+			}
 		}
 		return ""
 	}
@@ -127,10 +144,25 @@ func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 		return ""
 	}
 	if r.Role == "tool" {
+		truncated, remaining, origLines, origBytes, byTruncated := truncateContent(r.Content, 2048, 15)
 		if colorize {
-			fmt.Fprintf(w, "\033[2;36m%s\033[0m\n", r.Content)
+			fmt.Fprintf(w, "\033[2;36m%s\033[0m\n", truncated)
+			if byTruncated && remaining > 0 {
+				fmt.Fprintf(w, "\033[90m[truncated - 15/%d lines, 2048/%d bytes]\033[0m\n", origLines, origBytes)
+			} else if byTruncated {
+				fmt.Fprintf(w, "\033[90m[truncated - 2048/%d bytes]\033[0m\n", origBytes)
+			} else if remaining > 0 {
+				fmt.Fprintf(w, "\033[90m[truncated - 15/%d lines]\033[0m\n", origLines)
+			}
 		} else {
-			fmt.Fprintln(w, r.Content)
+			fmt.Fprintln(w, truncated)
+			if byTruncated && remaining > 0 {
+				fmt.Fprintln(w, fmt.Sprintf("[truncated - 15/%d lines, 2048/%d bytes]", origLines, origBytes))
+			} else if byTruncated {
+				fmt.Fprintln(w, fmt.Sprintf("[truncated - 2048/%d bytes]", origBytes))
+			} else if remaining > 0 {
+				fmt.Fprintln(w, fmt.Sprintf("[truncated - 15/%d lines]", origLines))
+			}
 		}
 		return ""
 	}
@@ -327,6 +359,34 @@ func sendCommand(conn *websocket.Conn, logger *slog.Logger, w io.Writer, input s
 			return mode, nil
 		}
 	}
+}
+
+// truncateContent truncates a string: first to maxBytes total, then to maxLines.
+// Returns the truncated content, remaining lines (0 if not line-truncated),
+// original line count, original byte count, and whether byte truncation occurred.
+func truncateContent(content string, maxBytes int, maxLines int) (string, int, int, int, bool) {
+	originalLines := strings.Count(content, "\n") + 1
+	originalBytes := len(content)
+
+	// Truncate by total byte length.
+	byTruncated := false
+	if len(content) > maxBytes {
+		content = content[:maxBytes]
+		byTruncated = true
+	}
+
+	// Truncate by line count.
+	lines := strings.Split(content, "\n")
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+
+	truncated := strings.Join(lines, "\n")
+	remaining := originalLines - maxLines
+	if remaining < 0 {
+		remaining = 0
+	}
+	return truncated, remaining, originalLines, originalBytes, byTruncated
 }
 
 // printStatsLine prints the timestamp + token stats line (color 94 = light blue).
