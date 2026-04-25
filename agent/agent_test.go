@@ -19,25 +19,12 @@ import (
 
 // fakeProvider satisfies llm.Provider by feeding predetermined tokens or calls.
 type fakeProvider struct {
-	tokens       []string
 	callText     string
 	callTexts    []string
 	callTools    []types.ToolCall
 	callErr      error
 	callCount    int
 	callErrAfter int // number of successful calls before returning error
-}
-
-func (f *fakeProvider) Complete(ctx context.Context, messages []types.Message) (<-chan string, error) {
-	if f.callErr != nil && f.callCount >= f.callErrAfter {
-		return nil, f.callErr
-	}
-	ch := make(chan string, len(f.tokens))
-	for _, t := range f.tokens {
-		ch <- t
-	}
-	close(ch)
-	return ch, nil
 }
 
 func (f *fakeProvider) Call(ctx context.Context, messages []types.Message, toolDefs []types.ToolDef) (llm.CallResult, error) {

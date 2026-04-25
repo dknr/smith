@@ -144,15 +144,6 @@ type nonStreamTiming struct {
 	PredictedPerSecond *float64 `json:"predicted_per_second"`
 }
 
-// Complete sends the conversation to the model and returns a channel of
-// streaming tokens. The channel is closed when the response is complete.
-//
-// Note: This method is no longer used by the agent, which only calls Call().
-// It is kept for potential future streaming support.
-func (p *HTTPProvider) Complete(ctx context.Context, messages []types.Message) (<-chan string, error) {
-	return nil, fmt.Errorf("streaming is not implemented")
-}
-
 // Call sends the conversation to the model (with optional tools) and returns
 // a structured result containing either text content or tool calls.
 func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools []types.ToolDef) (CallResult, error) {
