@@ -18,7 +18,18 @@ const (
 	ansiCyan       = "\033[96m"
 	ansiStrike     = "\033[1;2m" // bold + dim (approximation of strikethrough)
 	ansiGreen      = "\033[32m"
+	ansiYellow     = "\033[33m"
 )
+
+// tableMode controls how tables are rendered.
+type tableMode int
+
+const (
+	tableModeDash tableMode = iota // pipes and dashes
+	tableModeBox                   // box drawing characters
+)
+
+var currentTableMode = tableModeBox
 
 // FormatMarkdown converts markdown to ANSI-formatted text for terminal display.
 func FormatMarkdown(input string) string {
@@ -75,9 +86,30 @@ func FormatMarkdown(input string) string {
 	return strings.Join(result, "\n")
 }
 
-// isTableRow checks if a line looks like a table row (contains at least 2 pipes).
+// isTableRow checks if a line looks like a table row (contains at least 2 pipes)
+// or is a table separator line (dashes, colons, underscores between pipes).
 func isTableRow(line string) bool {
-	return strings.Count(line, "|") >= 2
+	if strings.Count(line, "|") >= 2 {
+		return true
+	}
+	// Check if it's a separator line: all dashes/colons/underscores (possibly with leading/trailing pipes)
+	cleaned := strings.TrimSpace(line)
+	if strings.HasPrefix(cleaned, "|") {
+		cleaned = cleaned[1:]
+	}
+	if strings.HasSuffix(cleaned, "|") {
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return false
+	}
+	for _, ch := range cleaned {
+		if ch != '-' && ch != ':' && ch != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // stripANSI removes ANSI escape codes from a string and returns the visible length.
@@ -162,14 +194,23 @@ func formatTable(lines []string) []string {
 			cells = append(cells, cell)
 		}
 
-		formatted := "| " + strings.Join(cells, " | ") + " |"
-
-		// Bold header row (first row)
-		if i == 0 {
-			formatted = ansiBold + formatted + ansiReset
+		if currentTableMode == tableModeBox {
+			// Box drawing mode: │ cell │ cell │
+			formatted := "│ " + strings.Join(cells, " │ ") + " │"
+			// Bold header row (first row)
+			if i == 0 {
+				formatted = ansiBold + formatted + ansiReset
+			}
+			result = append(result, formatted)
+		} else {
+			// Legacy dash mode: | cell | cell |
+			formatted := "| " + strings.Join(cells, " | ") + " |"
+			// Bold header row (first row)
+			if i == 0 {
+				formatted = ansiBold + formatted + ansiReset
+			}
+			result = append(result, formatted)
 		}
-
-		result = append(result, formatted)
 	}
 
 	return result
@@ -177,7 +218,38 @@ func formatTable(lines []string) []string {
 
 // rebuildSeparator reconstructs a separator row with padding that matches the given column widths.
 func rebuildSeparator(rawLine string, widths []int) string {
-	// Parse the separator to get the number of columns
+	if currentTableMode == tableModeBox {
+		// Detect alignment markers from the original separator
+		var aligns []string // "", "-", ":", ":-", "-:"
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "|") {
+			line = line[1:]
+		}
+		if strings.HasSuffix(line, "|") {
+			line = line[:len(line)-1]
+		}
+		parts := strings.Split(line, "|")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				aligns = append(aligns, "")
+			} else {
+				aligns = append(aligns, part)
+			}
+		}
+
+		// Build box drawing separator: ├──────┼──────┼──────┤
+		// Each column gets: dashes + 2 spaces (one on each side)
+		// Junctions are always ┼ regardless of alignment markers
+		var parts2 []string
+		for _, w := range widths {
+			sep := strings.Repeat("─", w+2)
+			parts2 = append(parts2, sep)
+		}
+		return "├" + strings.Join(parts2, "┼") + "┤"
+	}
+
+	// Legacy dash mode: |-----|-----|
 	line := strings.TrimSpace(rawLine)
 	if strings.HasPrefix(line, "|") {
 		line = line[1:]
@@ -193,7 +265,6 @@ func rebuildSeparator(rawLine string, widths []int) string {
 		// Determine the separator style for this cell
 		var sep string
 		if strings.Contains(part, ":") {
-			// Contains alignment marker (e.g., ":-:", "-:", ":-")
 			sep = ":"
 		} else {
 			sep = "-"
@@ -207,12 +278,12 @@ func rebuildSeparator(rawLine string, widths []int) string {
 			sepLen++
 		}
 		if i < len(widths) {
-			sepLen = widths[i]
+			sepLen = widths[i] + 2
 		}
 		cells = append(cells, strings.Repeat(sep, sepLen))
 	}
 
-	return "| " + strings.Join(cells, " | ") + " |"
+	return "|" + strings.Join(cells, "|") + "|"
 }
 
 // isSeparatorRow checks if a line is a table separator (e.g., |------|).
@@ -291,9 +362,9 @@ func formatInline(line string) string {
 		return fmt.Sprintf("\x00CODE%d\x00", idx)
 	})
 
-	// Apply strikethrough: ~~text~~
+	// Apply strikethrough: ~~text~~ (yellow, italic, with visible tildes)
 	result = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllStringFunc(result, func(m string) string {
-		return ansiStrike + m[2:len(m)-2] + ansiReset
+		return ansiYellow + ansiItalic + "~~" + m[2:len(m)-2] + "~~" + ansiReset
 	})
 
 	// Apply bold: **text** or __text__

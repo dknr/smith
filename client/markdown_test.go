@@ -565,17 +565,17 @@ func TestFormatMarkdown_Strikethrough(t *testing.T) {
 		{
 			name:     "simple strikethrough",
 			input:    "~~deleted text~~",
-			expected: "\033[1;2mdeleted text\033[0m",
+			expected: "\033[33m\033[3m~~deleted text~~\033[0m",
 		},
 		{
 			name:     "strikethrough with surrounding text",
 			input:    "prefix ~~deleted~~ suffix",
-			expected: "prefix \033[1;2mdeleted\033[0m suffix",
+			expected: "prefix \033[33m\033[3m~~deleted~~\033[0m suffix",
 		},
 		{
 			name:     "multiple strikethroughs",
 			input:    "~~first~~ and ~~second~~",
-			expected: "\033[1;2mfirst\033[0m and \033[1;2msecond\033[0m",
+			expected: "\033[33m\033[3m~~first~~\033[0m and \033[33m\033[3m~~second~~\033[0m",
 		},
 	}
 
@@ -674,22 +674,22 @@ func TestFormatMarkdown_Table(t *testing.T) {
 		{
 			name:     "simple table",
 			input:    "| Name | Value |\n|------|-------|\n| foo | bar |",
-			expected: "\033[1m| Name | Value |\033[0m\n| ---- | ----- |\n| foo  | bar   |",
+			expected: "\033[1m│ Name │ Value │\033[0m\n├──────┼───────┤\n│ foo  │ bar   │",
 		},
 		{
 			name:     "table with bold header",
 			input:    "| **Header** | Col |\n|------------|-----|\n| data | x |",
-			expected: "\033[1m| \033[1mHeader\033[0m | Col |\033[0m\n| ------ | --- |\n| data   | x   |",
+			expected: "\033[1m│ \033[1mHeader\033[0m │ Col │\033[0m\n├────────┼─────┤\n│ data   │ x   │",
 		},
 		{
 			name:     "table with varying column widths",
 			input:    "| A | Long Column |\n|---|-------------|\n| 1 | value |",
-			expected: "\033[1m| A | Long Column |\033[0m\n| - | ----------- |\n| 1 | value       |",
+			expected: "\033[1m│ A │ Long Column │\033[0m\n├───┼─────────────┤\n│ 1 │ value       │",
 		},
 		{
 			name:     "table alignment with short and long values",
 			input:    "| Name | Value |\n|------|-------|\n| a | very long value |\n| bb | c |",
-			expected: "\033[1m| Name | Value           |\033[0m\n| ---- | --------------- |\n| a    | very long value |\n| bb   | c               |",
+			expected: "\033[1m│ Name │ Value           │\033[0m\n├──────┼─────────────────┤\n│ a    │ very long value │\n│ bb   │ c               │",
 		},
 	}
 
@@ -708,7 +708,7 @@ func TestFormatMarkdown_TableWithFormatting(t *testing.T) {
 	got := FormatMarkdown(input)
 
 	// Check header is bold
-	if !strings.Contains(got, "\033[1m| \033[1mName\033[0m") {
+	if !strings.Contains(got, "\033[1m│ \033[1mName\033[0m") {
 		t.Errorf("missing bold header in %q", got)
 	}
 	// Check cell bold is preserved
@@ -730,10 +730,9 @@ func TestFormatMarkdown_TableAlignment(t *testing.T) {
 	if !strings.Contains(got, "c") {
 		t.Errorf("missing 'c' in aligned table %q", got)
 	}
-	// Check that the table structure is preserved (pipes present)
-	pipes := strings.Count(got, "|")
-	if pipes < 12 {
-		t.Errorf("expected at least 12 pipes in aligned table, got %d in %q", pipes, got)
+	// Check that the table structure is preserved (box chars present)
+	if !strings.Contains(got, "│") || !strings.Contains(got, "├") || !strings.Contains(got, "┤") {
+		t.Errorf("expected box drawing characters in aligned table %q", got)
 	}
 }
 
@@ -742,8 +741,8 @@ func TestFormatMarkdown_TableSeparatorAlignment(t *testing.T) {
 	input := "| A | B |\n|---|---|\n| 1 | 2 |"
 	got := FormatMarkdown(input)
 
-	// Separator should match column widths (A=1, B=1 -> dashes 1)
-	if !strings.Contains(got, "| - | - |") {
+	// Separator should match column widths (A=1, B=1 -> dashes 3 = 1+2)
+	if !strings.Contains(got, "├───┼───┤") {
 		t.Errorf("separator not aligned in %q", got)
 	}
 }
@@ -767,8 +766,8 @@ func TestFormatMarkdown_MixedFeatures(t *testing.T) {
 		"\033[90m│ \033[0m",
 		"\033[1mbold\033[0m",
 		"\033[32m→ \033[0mFirst item",
-		"\033[1;2mstrikethrough\033[0m",
-		"\033[1m| Col1",
+		"\033[33m\033[3m~~strikethrough~~\033[0m",
+		"\033[1m│ Col1",
 		"\033[90mcode block\033[0m",
 	}
 
