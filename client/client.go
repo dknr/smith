@@ -134,6 +134,11 @@ func renderResponse(w io.Writer, r *types.Response, colorize bool) string {
 		}
 		return ""
 	}
+	// stats: print stats line
+	if r.Role == "stats" {
+		printStatsLine(w, r.Usage, r.Timing)
+		return ""
+	}
 	// assistant: print with grey foreground (color 90).
 	if r.Content != "" {
 		if colorize {

@@ -236,7 +236,7 @@ func TestHistory_defensiveCopy(t *testing.T) {
 }
 
 func TestHistory_toolCallLoop(t *testing.T) {
-	a := newFakeAgent("", []types.ToolCall{{ID: "call_1", Name: "time", Arguments: "{}"}})
+	a := newFakeAgent("ok", []types.ToolCall{{ID: "call_1", Name: "time", Arguments: "{}"}})
 
 	respCh, _ := a.ProcessMessage(context.Background(), "what time is it")
 	for range respCh {
@@ -268,7 +268,7 @@ func TestHistory_toolCallWithFileView(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := newFakeAgent("", []types.ToolCall{{ID: "call_1", Name: "view", Arguments: `{"path":"` + testFile + `"}`}})
+	a := newFakeAgent("ok", []types.ToolCall{{ID: "call_1", Name: "view", Arguments: `{"path":"` + testFile + `"}`}})
 
 	respCh, _ := a.ProcessMessage(context.Background(), "read the file")
 	for range respCh {

@@ -67,6 +67,29 @@ func callStats(usage *llm.Usage, timing *llm.Timing) string {
 	return fmt.Sprintf("%d => %d => %d tokens", promptTokens, completionTokens, totalTokens)
 }
 
+func convertUsage(usage *llm.Usage) *types.ResponseUsage {
+	if usage == nil {
+		return nil
+	}
+	return &types.ResponseUsage{
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+	}
+}
+
+func convertTiming(timing *llm.Timing) *types.ResponseTiming {
+	if timing == nil {
+		return nil
+	}
+	return &types.ResponseTiming{
+		PromptMs:           timing.PromptMs,
+		PromptPerSecond:    timing.PromptPerSecond,
+		PredictedMs:        timing.PredictedMs,
+		PredictedPerSecond: timing.PredictedPerSecond,
+	}
+}
+
 // toolPreview returns the first 30 characters of output for logging.
 func toolPreview(output string) string {
 	if len(output) <= 30 {
@@ -215,7 +238,7 @@ func (a *Agent) processKickoff(ctx context.Context, kickoff string, startLen int
 			if result.Usage != nil {
 				outputTokens += result.Usage.CompletionTokens
 			}
-			toolCount = a.handleToolCalls(turn, ctx, result, respCh, toolCount)
+			toolCount = a.handleToolCalls(turn, ctx, result, respCh, toolCount, result.Usage, result.Timing)
 			continue
 		}
 
@@ -387,7 +410,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 				if result.Usage != nil {
 					outputTokens += result.Usage.CompletionTokens
 				}
-				toolCount = a.handleToolCalls(turn, ctx, result, respCh, toolCount)
+				toolCount = a.handleToolCalls(turn, ctx, result, respCh, toolCount, result.Usage, result.Timing)
 				continue
 			}
 
@@ -422,7 +445,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 	return respCh, nil
 }
 
-func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.CallResult, respCh chan<- *types.Response, toolCount int) int {
+func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.CallResult, respCh chan<- *types.Response, toolCount int, usage *llm.Usage, timing *llm.Timing) int {
 	for i, tc := range result.ToolCalls {
 		// Use a deterministic ID for cache consistency
 		if tc.ID == "" {
@@ -489,6 +512,16 @@ func (a *Agent) handleToolCalls(turn int64, ctx context.Context, result llm.Call
 		}
 		toolCount++
 	}
+
+	if usage != nil || timing != nil {
+		respCh <- &types.Response{
+			Role:   "stats",
+			Usage:  convertUsage(usage),
+			Timing: convertTiming(timing),
+			Done:   false,
+		}
+	}
+
 	return toolCount
 }
 
