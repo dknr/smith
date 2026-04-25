@@ -207,8 +207,7 @@ func rebuildSeparator(rawLine string, widths []int) string {
 			sepLen++
 		}
 		if i < len(widths) {
-			// Use the column width + 2 for padding (one space on each side)
-			sepLen = widths[i] + 2
+			sepLen = widths[i]
 		}
 		cells = append(cells, strings.Repeat(sep, sepLen))
 	}
