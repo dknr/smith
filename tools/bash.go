@@ -15,7 +15,7 @@ const maxBashOutput = 16384
 // BashToolDef is the tool definition for "bash".
 var BashToolDef = types.ToolDef{
 	Name:        "bash",
-	Description: "Execute any shell command.",
+	Description: "Execute any shell command. WARNING: This tool runs commands with full system access. Be cautious with destructive operations (rm, chmod, dd, etc.). Commands are executed in FullMode only. Timeout: 30 seconds.",
 	Parameters: map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -39,7 +39,7 @@ func toolBash(ctx context.Context, argsJSON string) (string, error) {
 		return "", fmt.Errorf("command is required")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", p.Command)
