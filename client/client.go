@@ -361,27 +361,32 @@ func sendCommand(conn *websocket.Conn, logger *slog.Logger, w io.Writer, input s
 	}
 }
 
-// truncateContent truncates a string: first to maxBytes total, then to maxLines.
+// truncateContent truncates a string: first to maxLines, then to maxBytes.
 // Returns the truncated content, remaining lines (0 if not line-truncated),
 // original line count, original byte count, and whether byte truncation occurred.
 func truncateContent(content string, maxBytes int, maxLines int) (string, int, int, int, bool) {
 	originalLines := strings.Count(content, "\n") + 1
 	originalBytes := len(content)
 
-	// Truncate by total byte length.
-	byTruncated := false
-	if len(content) > maxBytes {
-		content = content[:maxBytes]
-		byTruncated = true
-	}
-
-	// Truncate by line count.
+	// Truncate by line count first.
 	lines := strings.Split(content, "\n")
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]
 	}
-
 	truncated := strings.Join(lines, "\n")
+
+	// Truncate by byte length if needed, avoiding mid-line splits.
+	byTruncated := false
+	if len(truncated) > maxBytes {
+		idx := strings.LastIndex(truncated[:maxBytes], "\n")
+		if idx > 0 {
+			truncated = truncated[:idx]
+		} else {
+			truncated = truncated[:maxBytes]
+		}
+		byTruncated = true
+	}
+
 	remaining := originalLines - maxLines
 	if remaining < 0 {
 		remaining = 0
