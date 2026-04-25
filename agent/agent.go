@@ -210,6 +210,19 @@ func (a *Agent) processKickoff(ctx context.Context, kickoff string, startLen int
 	start := time.Now()
 
 	for {
+		// Check for context cancellation before each provider call.
+		select {
+		case <-ctx.Done():
+			a.logger.Info("turn cancelled", "turn", turn, "reason", ctx.Err())
+			respCh <- &types.Response{
+				Role:    "error",
+				Content: fmt.Sprintf("Turn cancelled: %v", ctx.Err()),
+				Done:    true,
+			}
+			return
+		default:
+		}
+
 		callCount++
 		if callCount > maxCalls {
 			respCh <- &types.Response{
@@ -383,6 +396,19 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 		var outputTokens int
 		start := time.Now()
 		for {
+			// Check for context cancellation before each provider call.
+			select {
+			case <-ctx.Done():
+				a.logger.Info("turn cancelled", "reason", ctx.Err())
+				respCh <- &types.Response{
+					Role:    "error",
+					Content: fmt.Sprintf("Turn cancelled: %v", ctx.Err()),
+					Done:    true,
+				}
+				return
+			default:
+			}
+
 			callCount++
 			if callCount > maxCalls {
 				respCh <- &types.Response{
