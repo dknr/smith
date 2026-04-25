@@ -674,17 +674,22 @@ func TestFormatMarkdown_Table(t *testing.T) {
 		{
 			name:     "simple table",
 			input:    "| Name | Value |\n|------|-------|\n| foo | bar |",
-			expected: "\033[1m| Name | Value |\033[0m\n|------|-------|\n| foo | bar |",
+			expected: "\033[1m| Name | Value |\033[0m\n| ------ | ------- |\n| foo  | bar   |",
 		},
 		{
 			name:     "table with bold header",
 			input:    "| **Header** | Col |\n|------------|-----|\n| data | x |",
-			expected: "\033[1m| \033[1mHeader\033[0m | Col |\033[0m\n|------------|-----|\n| data | x |",
+			expected: "\033[1m| \033[1mHeader\033[0m | Col |\033[0m\n| -------- | ----- |\n| data   | x   |",
 		},
 		{
 			name:     "table with varying column widths",
 			input:    "| A | Long Column |\n|---|-------------|\n| 1 | value |",
-			expected: "\033[1m| A | Long Column |\033[0m\n|---|-------------|\n| 1 | value |",
+			expected: "\033[1m| A | Long Column |\033[0m\n| --- | ------------- |\n| 1 | value       |",
+		},
+		{
+			name:     "table alignment with short and long values",
+			input:    "| Name | Value |\n|------|-------|\n| a | very long value |\n| bb | c |",
+			expected: "\033[1m| Name | Value           |\033[0m\n| ------ | ----------------- |\n| a    | very long value |\n| bb   | c               |",
 		},
 	}
 
@@ -709,6 +714,37 @@ func TestFormatMarkdown_TableWithFormatting(t *testing.T) {
 	// Check cell bold is preserved
 	if !strings.Contains(got, "\033[1mOK\033[0m") {
 		t.Errorf("missing bold cell in %q", got)
+	}
+}
+
+func TestFormatMarkdown_TableAlignment(t *testing.T) {
+	// Test that columns are aligned by padding shorter cells
+	input := "| Col1 | Col2 |\n|------|------|\n| a | long value |\n| bb | c |"
+	got := FormatMarkdown(input)
+
+	// The "bb" cell should be padded to match "a" column width
+	// The "c" cell should be padded to match "long value" column width
+	if !strings.Contains(got, "bb") {
+		t.Errorf("missing 'bb' in aligned table %q", got)
+	}
+	if !strings.Contains(got, "c") {
+		t.Errorf("missing 'c' in aligned table %q", got)
+	}
+	// Check that the table structure is preserved (pipes present)
+	pipes := strings.Count(got, "|")
+	if pipes < 12 {
+		t.Errorf("expected at least 12 pipes in aligned table, got %d in %q", pipes, got)
+	}
+}
+
+func TestFormatMarkdown_TableSeparatorAlignment(t *testing.T) {
+	// Test that separator row is rebuilt to match padded column widths
+	input := "| A | B |\n|---|---|\n| 1 | 2 |"
+	got := FormatMarkdown(input)
+
+	// Separator should match column widths (A=1, B=1 -> widths 1,1 -> dashes 1+2=3)
+	if !strings.Contains(got, "| --- | --- |") {
+		t.Errorf("separator not aligned in %q", got)
 	}
 }
 

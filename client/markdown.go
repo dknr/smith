@@ -126,15 +126,39 @@ func formatTable(lines []string) []string {
 		}
 	}
 
+	// Calculate column widths based on visible (ANSI-stripped) length
+	widths := make([]int, numCols)
+	for _, r := range rows {
+		if r.isSep {
+			continue
+		}
+		for i, cell := range r.cells {
+			if i < len(widths) {
+				vlen := stripANSI(cell)
+				if vlen > widths[i] {
+					widths[i] = vlen
+				}
+			}
+		}
+	}
+
 	// Format rows with alignment
 	var result []string
 	for i, r := range rows {
 		if r.isSep {
-			result = append(result, r.rawLine)
+			// Rebuild separator row to match padded widths
+			result = append(result, rebuildSeparator(r.rawLine, widths))
 			continue
 		}
 		var cells []string
-		for _, cell := range r.cells {
+		for j, cell := range r.cells {
+			if j < len(widths) {
+				vlen := stripANSI(cell)
+				pad := widths[j] - vlen
+				if pad > 0 {
+					cell = cell + strings.Repeat(" ", pad)
+				}
+			}
 			cells = append(cells, cell)
 		}
 
@@ -149,6 +173,47 @@ func formatTable(lines []string) []string {
 	}
 
 	return result
+}
+
+// rebuildSeparator reconstructs a separator row with padding that matches the given column widths.
+func rebuildSeparator(rawLine string, widths []int) string {
+	// Parse the separator to get the number of columns
+	line := strings.TrimSpace(rawLine)
+	if strings.HasPrefix(line, "|") {
+		line = line[1:]
+	}
+	if strings.HasSuffix(line, "|") {
+		line = line[:len(line)-1]
+	}
+	parts := strings.Split(line, "|")
+
+	var cells []string
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		// Determine the separator style for this cell
+		var sep string
+		if strings.Contains(part, ":") {
+			// Contains alignment marker (e.g., ":-:", "-:", ":-")
+			sep = ":"
+		} else {
+			sep = "-"
+		}
+		// Calculate the length of the separator content (excluding colons)
+		sepLen := 0
+		for _, ch := range part {
+			if ch != '-' && ch != ':' {
+				continue
+			}
+			sepLen++
+		}
+		if i < len(widths) {
+			// Use the column width + 2 for padding (one space on each side)
+			sepLen = widths[i] + 2
+		}
+		cells = append(cells, strings.Repeat(sep, sepLen))
+	}
+
+	return "| " + strings.Join(cells, " | ") + " |"
 }
 
 // isSeparatorRow checks if a line is a table separator (e.g., |------|).
