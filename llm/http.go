@@ -28,16 +28,12 @@ type HTTPProvider struct {
 	// For llamacpp, this is mapped to a token budget (thinking_budget_tokens).
 	// For trtllm, this is sent as the reasoning_effort field.
 	ReasoningEffort string
+	// Timeout is the HTTP client timeout for provider requests.
+	Timeout time.Duration
 }
 
 // defaultTimeout is the HTTP client timeout for provider requests.
 const defaultTimeout = 5 * 60 * time.Second
-
-// defaultReasoningBudget is the default reasoning budget in tokens.
-// llama.cpp's reasoning budget sampler limits tokens inside a reasoning block
-// (e.g. between <think> and </think>). Default -1 means unlimited, which can
-// cause server timeouts. 4096 tokens is a reasonable limit for reasoning.
-const defaultReasoningBudget = 4096
 
 // logDebug writes a request/response pair to the debug logger.
 func (p *HTTPProvider) logDebug(ctx context.Context, method, url string, reqBody, respBody interface{}) {
@@ -168,16 +164,12 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 	
 	if p.ProviderType == "llamacpp" {
 		// Map reasoning effort to thinking budget for llama.cpp
-		var budget int
+		budget := 4096 // default (also used for "low")
 		switch p.ReasoningEffort {
-		case "low":
-			budget = 4096
 		case "medium":
 			budget = 8192
 		case "high":
 			budget = 16384
-		default:
-			budget = defaultReasoningBudget // fallback to default
 		}
 		thinkingBudget = &budget
 	} else if p.ProviderType == "trtllm" {
@@ -221,7 +213,7 @@ func (p *HTTPProvider) Call(ctx context.Context, messages []types.Message, tools
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	}
 
-	httpClient := &http.Client{Timeout: defaultTimeout}
+	httpClient := &http.Client{Timeout: p.Timeout}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return CallResult{}, fmt.Errorf("failed to send request: %w", err)

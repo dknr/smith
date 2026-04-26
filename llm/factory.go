@@ -2,6 +2,7 @@ package llm
 
 import (
 	"log/slog"
+	"time"
 
 	"smith/config"
 	"smith/types"
@@ -21,6 +22,13 @@ func NewProvider(cfg *config.Config, debugLogger *slog.Logger, turnLogger *TurnL
 	if providerType == "" {
 		providerType = "llamacpp"
 	}
+	// Set default timeout to 5m if not provided
+	timeout := defaultTimeout
+	if cfg.Provider.Timeout != "" {
+		if t, err := time.ParseDuration(cfg.Provider.Timeout); err == nil {
+			timeout = t
+		}
+	}
 	return &HTTPProvider{
 		BaseURL:      cfg.BaseURL,
 		APIKey:       cfg.APIKey,
@@ -30,5 +38,6 @@ func NewProvider(cfg *config.Config, debugLogger *slog.Logger, turnLogger *TurnL
 		TurnLogger:   turnLogger,
 		ProviderType: providerType,
 		ReasoningEffort: reasoningEffort,
+		Timeout: timeout,
 	}
 }

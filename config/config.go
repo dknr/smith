@@ -17,6 +17,20 @@ type Config struct {
 	Kickoff      string `toml:"kickoff"`
 	ProviderType string `toml:"provider_type"`
 	ReasoningEffort string `toml:"reasoning_effort"`
+
+	Agent   AgentConfig
+	Provider ProviderConfig
+}
+
+// AgentConfig holds agent-specific configuration.
+type AgentConfig struct {
+	MaxToolCalls  int    `toml:"max_tool_calls"`
+	CompactPrompt string `toml:"compact_prompt"`
+}
+
+// ProviderConfig holds provider-specific configuration.
+type ProviderConfig struct {
+	Timeout string `toml:"timeout"`
 }
 
 // configName is the name of the config file.

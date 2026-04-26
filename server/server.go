@@ -51,7 +51,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 	executor.RegisterFn("search", searchTool.Execute, tools.SearchToolDef)
 
 	provider := llm.NewProvider(cfg, debugLogger, turnLogger, executor.Definitions())
-	a := agent.New(provider, executor, sess, logger, memStore)
+	a := agent.New(provider, executor, sess, logger, memStore, cfg)
 
 	// Run kickoff autonomously when session is empty and kickoff is configured.
 	if cfg.Kickoff != "" && len(a.History()) == 0 {

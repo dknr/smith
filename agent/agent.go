@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"smith/config"
 	"smith/llm"
 	"smith/memory"
 	"smith/session"
@@ -26,16 +27,18 @@ type Agent struct {
 	session  *session.Session
 	memStore *memory.Store
 	turnSeq  atomic.Int64
+	cfg      *config.Config
 }
 
 // New creates a new Agent with the given Provider, tool Registry, session, logger, and memory store.
-func New(provider llm.Provider, executor *tools.Registry, sess *session.Session, logger *slog.Logger, memStore *memory.Store) *Agent {
+func New(provider llm.Provider, executor *tools.Registry, sess *session.Session, logger *slog.Logger, memStore *memory.Store, cfg *config.Config) *Agent {
 	a := &Agent{
 		provider: provider,
 		executor: executor,
 		logger:   logger,
 		session:  sess,
 		memStore: memStore,
+		cfg:      cfg,
 	}
 	if sess != nil {
 		if history, err := sess.LoadHistory(); err == nil {
@@ -101,6 +104,14 @@ func toolPreview(output string) string {
 // compactPrompt is the default prompt used when summarizing a session for /compact.
 const compactPrompt = "Condense the following conversation into a summary. Preserve facts, decisions, and tool outcomes that may be relevant later. Discard formatting artifacts and redundant output."
 
+// getCompactPrompt returns the compact prompt from config if set, otherwise the default.
+func (a *Agent) getCompactPrompt() string {
+	if a.cfg != nil && a.cfg.Agent.CompactPrompt != "" {
+		return a.cfg.Agent.CompactPrompt
+	}
+	return compactPrompt
+}
+
 // CompactAndReset performs a session compact followed by a reset and optional
 // kickoff in a single atomic flow. It returns a merged response channel that
 // streams the compact summary first, then the kickoff exchange (if provided).
@@ -117,7 +128,7 @@ func (a *Agent) CompactAndReset(ctx context.Context, kickoff string) (<-chan *ty
 		a.mu.Unlock()
 
 		result, err := a.provider.Call(ctx, []types.Message{
-			{Role: "system", Content: compactPrompt},
+			{Role: "system", Content: a.getCompactPrompt()},
 			{Role: "user", Content: "Summarize the following conversation:\n\n" + transcript},
 		}, nil)
 		if err != nil {
@@ -234,6 +245,11 @@ func (a *Agent) runTurn(ctx context.Context, turn int64, startLen int, respCh ch
 	var outputTokens int
 	start := time.Now()
 
+	maxCalls := maxToolCalls
+	if a.cfg != nil && a.cfg.Agent.MaxToolCalls > 0 {
+		maxCalls = a.cfg.Agent.MaxToolCalls
+	}
+
 	for {
 		// Check for context cancellation before each provider call.
 		select {
@@ -249,10 +265,10 @@ func (a *Agent) runTurn(ctx context.Context, turn int64, startLen int, respCh ch
 		}
 
 		callCount++
-		if callCount > maxToolCalls {
+		if callCount > maxCalls {
 			respCh <- &types.Response{
 				Role:    "error",
-				Content: fmt.Sprintf("Agent exceeded maximum tool calls (%d).", maxToolCalls),
+				Content: fmt.Sprintf("Agent exceeded maximum tool calls (%d).", maxCalls),
 				Done:    true,
 			}
 			return
