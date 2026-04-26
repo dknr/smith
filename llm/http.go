@@ -19,7 +19,6 @@ type HTTPProvider struct {
 	APIKey       string
 	Model        string
 	SystemPrompt string
-	Tools        []types.ToolDef
 	DebugLogger  *slog.Logger
 	TurnLogger   *TurnLogger
 	// ProviderType indicates which LLM backend we are talking to.

@@ -6,7 +6,7 @@ import (
 )
 
 func TestMarshalRequest(t *testing.T) {
-	r := Request{ID: "1", Role: "user", Content: "hello"}
+	r := Request{ID: "1", Content: "hello"}
 	data, err := MarshalRequest(r)
 	if err != nil {
 		t.Fatalf("MarshalRequest: %v", err)
@@ -16,13 +16,13 @@ func TestMarshalRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UnmarshalRequest: %v", err)
 	}
-	if got.ID != r.ID || got.Role != r.Role || got.Content != r.Content {
+	if got.ID != r.ID || got.Content != r.Content {
 		t.Errorf("round-trip mismatch: got %+v, want %+v", got, r)
 	}
 }
 
 func TestMarshalRequest_noDoneField(t *testing.T) {
-	data, err := MarshalRequest(Request{ID: "1", Role: "user", Content: "hi"})
+	data, err := MarshalRequest(Request{ID: "1", Content: "hi"})
 	if err != nil {
 		t.Fatalf("MarshalRequest: %v", err)
 	}

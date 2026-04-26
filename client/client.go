@@ -28,7 +28,6 @@ func dial(addr string) (*websocket.Conn, error) {
 func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, colorize bool) (bool, string, error) {
 	req := types.Request{
 		ID:   "0",
-		Role: "user",
 		Sync: true,
 	}
 	data, err := types.MarshalRequest(req)
@@ -42,7 +41,6 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, coloriz
 	logger.Debug("sent sync request")
 
 	var hasHistory bool
-	var isNew bool
 	for {
 		_, resp, err := conn.ReadMessage()
 		if err != nil {
@@ -59,11 +57,6 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, coloriz
 		if r.SyncComplete {
 			logger.Debug("session synced")
 			mode := r.Mode
-			if isNew && colorize {
-				if r.Kickoff != "" {
-					fmt.Fprintf(w, "\033[90m  %s\033[0m\n", r.Kickoff)
-				}
-			}
 			return !hasHistory, mode, nil
 		}
 
@@ -78,13 +71,6 @@ func syncSession(conn *websocket.Conn, logger *slog.Logger, w io.Writer, coloriz
 			continue
 		}
 
-		// For new sessions, buffer kickoff responses.
-		if r.Role == "new_session" {
-			printNewSession(w)
-			isNew = true
-			logger.Debug("new session detected")
-			continue
-		}
 		if r.Role == "tool_call" || r.Role == "assistant" || r.Role == "error" {
 			renderResponse(w, r, colorize)
 		}
@@ -220,7 +206,6 @@ func Send(addr, message string, logger *slog.Logger, colorize bool) error {
 
 	req := types.Request{
 		ID:      "1",
-		Role:    "user",
 		Content: message,
 	}
 	data, err := types.MarshalRequest(req)
@@ -300,7 +285,6 @@ func Chat(addr string, logger *slog.Logger, term *Terminal) error {
 		msgID++
 		req := types.Request{
 			ID:      fmt.Sprintf("%d", msgID),
-			Role:    "user",
 			Content: input,
 		}
 		data, err := types.MarshalRequest(req)
@@ -330,7 +314,6 @@ func Chat(addr string, logger *slog.Logger, term *Terminal) error {
 func sendCommand(conn *websocket.Conn, logger *slog.Logger, w io.Writer, input string) (string, error) {
 	req := types.Request{
 		ID:      "0",
-		Role:    "user",
 		Content: strings.TrimSpace(input),
 	}
 	data, err := types.MarshalRequest(req)

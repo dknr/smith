@@ -50,7 +50,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 	executor.RegisterFn("memory", memoryTool.Execute, tools.MemoryToolDef)
 	executor.RegisterFn("search", searchTool.Execute, tools.SearchToolDef)
 
-	provider := llm.NewProvider(cfg, executor, debugLogger, turnLogger, executor.Definitions())
+	provider := llm.NewProvider(cfg, debugLogger, turnLogger, executor.Definitions())
 	a := agent.New(provider, executor, sess, logger, memStore)
 
 	// Run kickoff autonomously when session is empty and kickoff is configured.
@@ -118,7 +118,6 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				}
 				for resp := range respCh {
 					resp.ID = req.ID
-					resp.Reset = true
 					resp.Mode = string(a.Mode())
 
 					data, err := types.MarshalResponse(*resp)

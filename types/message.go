@@ -54,10 +54,8 @@ const (
 // Request represents a message from the client to the server.
 type Request struct {
 	ID      string `json:"id"`
-	Role    string `json:"role"`
 	Content string `json:"content"`
 	Sync    bool   `json:"sync"`
-	Reset   bool   `json:"reset"`
 	Mode    Mode   `json:"mode,omitempty"`
 }
 
@@ -67,10 +65,7 @@ type Response struct {
 	Role         string          `json:"role"`
 	Content      string          `json:"content"`
 	Done         bool            `json:"done"`
-	History      []Message       `json:"history,omitempty"` // Deprecated: use inline Response objects instead.
 	SyncComplete bool            `json:"sync_complete,omitempty"`
-	Reset        bool            `json:"reset,omitempty"`
-	Kickoff      string          `json:"kickoff,omitempty"`
 	Usage        *ResponseUsage  `json:"usage,omitempty"`
 	Timing       *ResponseTiming `json:"timing,omitempty"`
 	Command      string          `json:"command,omitempty"` // Server-only command (e.g., "mode_change")

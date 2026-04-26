@@ -15,9 +15,8 @@ func TestNewProvider_fields(t *testing.T) {
 		ProviderType: "llamacpp",
 		ReasoningEffort: "medium",
 	}
-	exec := tools.NewRegistry()
 
-	p := NewProvider(cfg, exec, nil, nil, exec.Definitions())
+	p := NewProvider(cfg, nil, nil, tools.NewRegistry().Definitions())
 	hp, ok := p.(*HTTPProvider)
 	if !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", p)
@@ -45,9 +44,8 @@ func TestNewProvider_emptyAPIKey(t *testing.T) {
 		APIKey:  "",
 		Model:   "local",
 	}
-	exec := tools.NewRegistry()
 
-	p := NewProvider(cfg, exec, nil, nil)
+	p := NewProvider(cfg, nil, nil)
 	hp, ok := p.(*HTTPProvider)
 	if !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", p)
@@ -66,9 +64,8 @@ func TestNewProvider_trtllmProvider(t *testing.T) {
 		ProviderType: "trtllm",
 		ReasoningEffort: "high",
 	}
-	exec := tools.NewRegistry()
 
-	p := NewProvider(cfg, exec, nil, nil)
+	p := NewProvider(cfg, nil, nil)
 	hp, ok := p.(*HTTPProvider)
 	if !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", p)
@@ -89,9 +86,8 @@ func TestNewProvider_defaults(t *testing.T) {
 		Model:   "test-model",
 		// ProviderType and ReasoningEffort left empty
 	}
-	exec := tools.NewRegistry()
 
-	p := NewProvider(cfg, exec, nil, nil)
+	p := NewProvider(cfg, nil, nil)
 	hp, ok := p.(*HTTPProvider)
 	if !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", p)
