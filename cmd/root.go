@@ -21,12 +21,13 @@ var (
 	verbose    bool
 	debugTurns string
 	version    = "dev"
+	timestamp  = "unknown"
+	commit     = "unknown"
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "smith",
-	Short:   "smith - an LLM agent client/server",
-	Version: version,
+	Use:   "smith",
+	Short: "smith - an LLM agent client/server",
 }
 
 var serveCmd = &cobra.Command{
@@ -132,4 +133,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "enable debug logging to log/smith-*.log")
 	serveCmd.Flags().StringVar(&debugTurns, "debug-turns", "", "enable turn request/response logging (default: log/turns)")
 	sendCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show tool calls and stats in send mode")
+
+	rootCmd.Version = fmt.Sprintf("%s (%s, %s)", version, timestamp, commit)
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 }
