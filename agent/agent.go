@@ -281,78 +281,6 @@ func (a *Agent) processKickoff(ctx context.Context, kickoff string, startLen int
 	}
 }
 
-// Compact prompts the LLM to summarize the current session, archives the current
-// session, creates a new one with the summary as its first message, and returns
-// the summary via a response channel. If the provider call fails, the current
-// session is left intact.
-func (a *Agent) Compact(ctx context.Context) (<-chan *types.Response, error) {
-	ch := make(chan *types.Response, 1)
-
-	// Build transcript from current history (under lock to avoid data race).
-	a.mu.Lock()
-	transcript := buildTranscript(a.history)
-	a.mu.Unlock()
-
-	// Call provider one-shot to summarize (no tools).
-	result, err := a.provider.Call(ctx, []types.Message{
-		{Role: "system", Content: compactPrompt},
-		{Role: "user", Content: "Summarize the following conversation:\n\n" + transcript},
-	}, nil)
-	if err != nil {
-		a.logger.Error("compact provider error", "error", err)
-		ch <- &types.Response{
-			Role:    "error",
-			Content: err.Error(),
-			Done:    true,
-		}
-		close(ch)
-		return ch, nil
-	}
-
-	// Archive current session and create a new one.
-	if a.session != nil {
-		if _, err := a.session.ArchiveCurrent(); err != nil {
-			a.logger.Error("failed to archive session during compact", "error", err)
-			ch <- &types.Response{
-				Role:    "error",
-				Content: fmt.Sprintf("Failed to archive session: %v", err),
-				Done:    true,
-			}
-			close(ch)
-			return ch, nil
-		}
-	}
-
-	// Insert summary as the first message of the new session.
-	summary := result.Text
-	a.mu.Lock()
-	a.history = []types.Message{{Role: "assistant", Content: summary}}
-	a.mu.Unlock()
-
-	if a.session != nil {
-		if err := a.session.Append(types.Message{Role: "assistant", Content: summary}); err != nil {
-			a.logger.Error("failed to save compact summary", "error", err)
-		}
-	}
-
-	// Save summary to long-term memory for future reference
-	if a.memStore != nil {
-		tags := "summary,auto-generated," + time.Now().Format("2006-01-02")
-		_, err := a.memStore.Add(summary, "context", tags)
-		if err != nil {
-			a.logger.Error("failed to save compact summary to memory", "error", err)
-		}
-	}
-
-	ch <- &types.Response{
-		Role:    "assistant",
-		Content: summary,
-		Done:    true,
-	}
-	close(ch)
-	return ch, nil
-}
-
 // buildTranscript formats conversation history as a markdown transcript with
 // ## role headings for display during session compaction.
 func buildTranscript(messages []types.Message) string {
@@ -609,28 +537,4 @@ func (a *Agent) Mode() types.Mode {
 // Session returns the session store for this agent.
 func (a *Agent) Session() *session.Session {
 	return a.session
-}
-
-// Reset clears all conversation history (in-memory), resets the
-// turn sequence, and optionally runs the kickoff message through the agent
-// loop. Returns a response channel to stream kickoff results to the client.
-func (a *Agent) Reset(ctx context.Context, kickoff string) (<-chan *types.Response, error) {
-	// Clear in-memory history.
-	a.mu.Lock()
-	a.history = nil
-	a.mu.Unlock()
-
-	// Reset turn sequence.
-	a.turnSeq.Store(0)
-
-	// Run kickoff through the agent loop if provided.
-	if kickoff != "" {
-		return a.ProcessMessage(ctx, kickoff)
-	}
-
-	// No kickoff — return a single marker response.
-	ch := make(chan *types.Response, 1)
-	ch <- &types.Response{Role: "reset", Done: true}
-	close(ch)
-	return ch, nil
 }
