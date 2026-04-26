@@ -171,10 +171,12 @@ func (a *Agent) CompactAndReset(ctx context.Context, kickoff string) (<-chan *ty
 			Done:    false,
 		}
 
-		// Step 4: Reset turn sequence.
+		// Step 4: Reset turn sequence and increment turn counter.
+		turn := a.turnSeq.Add(1)
 		a.turnSeq.Store(0)
+		a.logger.Info("turn", "turn", turn, "content", kickoff)
 
-		// Step 5: Process kickoff if provided.
+		// Step 5: Process kickoff through agent loop.
 		if kickoff != "" {
 			// Append kickoff as user message and record start index.
 			a.mu.Lock()
@@ -182,8 +184,7 @@ func (a *Agent) CompactAndReset(ctx context.Context, kickoff string) (<-chan *ty
 			startLen := len(a.history) - 1
 			a.mu.Unlock()
 
-			// Process kickoff through agent loop.
-			a.processKickoff(ctx, kickoff, startLen, respCh)
+			a.processKickoff(ctx, turn, startLen, respCh)
 		} else {
 			// No kickoff — send reset marker.
 			respCh <- &types.Response{Role: "reset", Done: true}
@@ -199,11 +200,35 @@ func (a *Agent) CompactAndReset(ctx context.Context, kickoff string) (<-chan *ty
 // must already be appended to history by the caller. startLen is the
 // index in history where the kickoff message was appended (used for
 // session persistence to avoid saving the compact summary).
-func (a *Agent) processKickoff(ctx context.Context, kickoff string, startLen int, respCh chan<- *types.Response) {
-	turn := a.turnSeq.Add(1)
-	a.logger.Info("turn", "turn", turn, "content", kickoff)
+func (a *Agent) processKickoff(ctx context.Context, turn int64, startLen int, respCh chan<- *types.Response) {
+	a.runTurn(ctx, turn, startLen, respCh)
+}
 
-	const maxCalls = 50
+// buildTranscript formats conversation history as a markdown transcript with
+// ## role headings for display during session compaction.
+func buildTranscript(messages []types.Message) string {
+	var sb strings.Builder
+	for _, m := range messages {
+		sb.WriteString(fmt.Sprintf("## %s\n", m.Role))
+		if len(m.ToolCalls) > 0 {
+			for _, tc := range m.ToolCalls {
+				sb.WriteString(fmt.Sprintf("%s(%s)\n", tc.Name, tc.Arguments))
+			}
+		}
+		if m.Content != "" {
+			sb.WriteString(m.Content)
+		}
+		sb.WriteString("\n\n")
+	}
+	return sb.String()
+}
+
+// maxToolCalls is the maximum number of provider calls allowed per turn.
+const maxToolCalls = 50
+
+// runTurn executes a single agent turn: call the provider, handle tool
+// calls or stream text, and save results to the session.
+func (a *Agent) runTurn(ctx context.Context, turn int64, startLen int, respCh chan<- *types.Response) {
 	var toolCount int
 	var callCount int
 	var outputTokens int
@@ -224,10 +249,10 @@ func (a *Agent) processKickoff(ctx context.Context, kickoff string, startLen int
 		}
 
 		callCount++
-		if callCount > maxCalls {
+		if callCount > maxToolCalls {
 			respCh <- &types.Response{
 				Role:    "error",
-				Content: fmt.Sprintf("Agent exceeded maximum tool calls (%d).", maxCalls),
+				Content: fmt.Sprintf("Agent exceeded maximum tool calls (%d).", maxToolCalls),
 				Done:    true,
 			}
 			return
@@ -281,25 +306,6 @@ func (a *Agent) processKickoff(ctx context.Context, kickoff string, startLen int
 	}
 }
 
-// buildTranscript formats conversation history as a markdown transcript with
-// ## role headings for display during session compaction.
-func buildTranscript(messages []types.Message) string {
-	var sb strings.Builder
-	for _, m := range messages {
-		sb.WriteString(fmt.Sprintf("## %s\n", m.Role))
-		if len(m.ToolCalls) > 0 {
-			for _, tc := range m.ToolCalls {
-				sb.WriteString(fmt.Sprintf("%s(%s)\n", tc.Name, tc.Arguments))
-			}
-		}
-		if m.Content != "" {
-			sb.WriteString(m.Content)
-		}
-		sb.WriteString("\n\n")
-	}
-	return sb.String()
-}
-
 // ProcessMessage appends a user message to history, sends it to the provider
 // (with tools), and returns a channel of responses. The agent loops on tool
 // calls until the provider returns text content. Intermediate streaming
@@ -317,83 +323,7 @@ func (a *Agent) ProcessMessage(ctx context.Context, content string) (<-chan *typ
 		turn := a.turnSeq.Add(1)
 		a.logger.Info("turn", "turn", turn, "content", content)
 
-	// Loop: call provider, handle tool calls or stream text.
-		const maxCalls = 50
-		var toolCount int
-		var callCount int
-		var outputTokens int
-		start := time.Now()
-		for {
-			// Check for context cancellation before each provider call.
-			select {
-			case <-ctx.Done():
-				a.logger.Info("turn cancelled", "reason", ctx.Err())
-				respCh <- &types.Response{
-					Role:    "error",
-					Content: fmt.Sprintf("Turn cancelled: %v", ctx.Err()),
-					Done:    true,
-				}
-				return
-			default:
-			}
-
-			callCount++
-			if callCount > maxCalls {
-				respCh <- &types.Response{
-					Role:    "error",
-					Content: fmt.Sprintf("Agent exceeded maximum tool calls (%d).", maxCalls),
-					Done:    true,
-				}
-				return
-			}
-			result, err := a.provider.Call(ctx, a.history, a.executor.Definitions())
-			if err != nil {
-				a.logger.Error("provider error", "error", err)
-				respCh <- &types.Response{
-					Role:    "error",
-					Content: err.Error(),
-					Done:    true,
-				}
-				return
-			}
-
-			stats := callStats(result.Usage, result.Timing)
-			a.logger.Info("provider call", "turn", turn, "call", callCount, "stats", stats)
-
-			if len(result.ToolCalls) > 0 {
-				if result.Usage != nil {
-					outputTokens += result.Usage.CompletionTokens
-				}
-				toolCount = a.handleToolCalls(turn, ctx, result, respCh, toolCount, result.Usage, result.Timing)
-				continue
-			}
-
-			// Text response — stream it.
-			if result.Usage != nil {
-				outputTokens += result.Usage.CompletionTokens
-			}
-			if result.Text == "" {
-				respCh <- &types.Response{
-					Role:    "error",
-					Content: "model returned empty response with no tool calls",
-					Done:    true,
-				}
-				return
-			}
-			a.streamText(ctx, result.Text, result.Usage, result.Timing, respCh)
-
-			// Save all new messages to the session.
-			if a.session != nil {
-				a.mu.Lock()
-				if err := a.session.Append(a.history[startLen:]...); err != nil {
-					a.logger.Error("failed to save session", "error", err)
-				}
-				a.mu.Unlock()
-			}
-
-			a.logger.Info("turn complete", "turn", turn, "calls", callCount, "tools", toolCount, "output_tokens", outputTokens, "duration", time.Since(start).Round(time.Millisecond))
-			return
-		}
+		a.runTurn(ctx, turn, startLen, respCh)
 	}()
 
 	return respCh, nil
