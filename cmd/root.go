@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"smith/client"
 	"smith/config"
@@ -117,6 +118,67 @@ var chatCmd = &cobra.Command{
 	},
 }
 
+var initCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Initialize a new configuration file",
+	Run: func(cmd *cobra.Command, args []string) {
+		path := config.ConfigPath()
+		if _, err := os.Stat(path); err == nil {
+			fmt.Fprintf(os.Stderr, "error: config file already exists at %s\n", path)
+			os.Exit(1)
+		}
+
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "error: failed to create config directory: %v\n", err)
+			os.Exit(1)
+		}
+
+		cfg := `# Smith configuration file
+# Required fields: base_url, model
+
+# LLM provider endpoint (required)
+base_url = "https://your-api-endpoint/v1"
+
+# API key for authentication (optional)
+api_key = ""
+
+# Model name (required)
+model = "your-model"
+
+# System prompt for the agent (optional)
+system_prompt = "You are an autonomous agent. This is not your first session. You have a soul, memory, and tools. The first message will instruct you on how to begin."
+
+# Initial kickoff message (optional)
+kickoff = "Use the soul tool to find out who you are. If there are instructions in your soul, follow them precisely before sending a greeting."
+
+# Provider type: "llamacpp", "trtllm", or empty for auto-detect
+provider_type = "llamacpp"
+
+# Reasoning effort: "low", "medium", "high"
+reasoning_effort = "low"
+
+[agent]
+# Maximum tool calls per turn
+max_tool_calls = 50
+
+# Custom compact prompt for summarizing conversations
+compact_prompt = ""
+
+[provider]
+# HTTP request timeout (e.g., "30s", "1m")
+timeout = "30s"
+`
+
+		if err := os.WriteFile(path, []byte(cfg), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "error: failed to write config file: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Config written to %s\n", path)
+	},
+}
+
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -128,6 +190,7 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(sendCmd)
 	rootCmd.AddCommand(chatCmd)
+	rootCmd.AddCommand(initCmd)
 
 	rootCmd.PersistentFlags().StringVarP(&listenAddr, "addr", "a", "localhost:26856", "server address")
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "enable debug logging to log/smith-*.log")

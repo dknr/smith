@@ -48,6 +48,11 @@ func configDir() string {
 	return filepath.Join(home, ".config", "smith")
 }
 
+// ConfigPath returns the full path to the config file.
+func ConfigPath() string {
+	return filepath.Join(configDir(), configName)
+}
+
 // Load reads smith.toml from the XDG config directory and returns the parsed config.
 // Returns an error if the file is not found or cannot be parsed.
 func Load() (*Config, error) {
