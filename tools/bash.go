@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"time"
@@ -45,6 +46,11 @@ func toolBash(ctx context.Context, argsJSON string) (string, error) {
 	cmd := exec.CommandContext(ctx, "bash", "-c", p.Command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			banner := fmt.Sprintf("[Process returned non-zero exit code: %d]\n", exitErr.ExitCode())
+			return banner + string(output), nil
+		}
 		return "", fmt.Errorf("bash failed: %s%s", err, output)
 	}
 
