@@ -53,7 +53,7 @@ func TestBuildHelpText(t *testing.T) {
 	}
 
 	// Should contain client-side commands.
-	for _, c := range []string{"/reset", "/quit"} {
+	for _, c := range []string{"/compact", "/quit"} {
 		if !strings.Contains(help, c) {
 			t.Errorf("help text missing client command %s", c)
 		}

@@ -48,8 +48,10 @@ type Mode string
 const (
 	SafeMode  Mode = "safe"
 	EditMode  Mode = "edit"
-	FullMode  Mode = "full"
+	FullMode Mode = "full"
 )
+
+const RoleWarning = "warning"
 
 // Request represents a message from the client to the server.
 type Request struct {

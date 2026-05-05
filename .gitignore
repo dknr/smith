@@ -4,3 +4,4 @@ smith.toml
 *.swp
 .crush/
 log/*.log
+log/

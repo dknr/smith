@@ -24,8 +24,9 @@ type Config struct {
 
 // AgentConfig holds agent-specific configuration.
 type AgentConfig struct {
-	MaxToolCalls  int    `toml:"max_tool_calls"`
-	CompactPrompt string `toml:"compact_prompt"`
+	MaxToolCalls    int    `toml:"max_tool_calls"`
+	MaxEmptyRetries int    `toml:"max_empty_retries"`
+	CompactPrompt   string `toml:"compact_prompt"`
 }
 
 // ProviderConfig holds provider-specific configuration.

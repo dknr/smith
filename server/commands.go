@@ -114,7 +114,7 @@ func buildHelpText(cmds []Command) string {
 	}
 
 	// Client-side commands.
-	sb.WriteString("  /reset — Reset the session\n")
+	sb.WriteString("  /compact — Compact the session\n")
 	sb.WriteString("  /quit — Exit the chat\n")
 
 	return strings.TrimSpace(sb.String())

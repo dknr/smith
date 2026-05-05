@@ -243,6 +243,7 @@ func (a *Agent) runTurn(ctx context.Context, turn int64, startLen int, respCh ch
 	var toolCount int
 	var callCount int
 	var outputTokens int
+	var retryCount int
 	start := time.Now()
 
 	maxCalls := maxToolCalls
@@ -300,9 +301,23 @@ func (a *Agent) runTurn(ctx context.Context, turn int64, startLen int, respCh ch
 			outputTokens += result.Usage.CompletionTokens
 		}
 		if result.Text == "" {
+			retryCount++
+			maxEmptyRetries := 2
+			if a.cfg != nil && a.cfg.Agent.MaxEmptyRetries > 0 {
+				maxEmptyRetries = a.cfg.Agent.MaxEmptyRetries
+			}
+			if retryCount <= maxEmptyRetries {
+				a.logger.Warn("empty response, retrying", "turn", turn, "call", callCount, "attempt", retryCount, "max", maxEmptyRetries)
+				respCh <- &types.Response{
+					Role:    types.RoleWarning,
+					Content: fmt.Sprintf("Model returned empty response (attempt %d of %d). Retrying...", retryCount, maxEmptyRetries),
+					Done:    false,
+				}
+				continue
+			}
 			respCh <- &types.Response{
 				Role:    "error",
-				Content: "model returned empty response with no tool calls",
+				Content: fmt.Sprintf("model returned empty response after %d attempts", maxEmptyRetries),
 				Done:    true,
 			}
 			return

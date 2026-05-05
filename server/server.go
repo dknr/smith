@@ -109,7 +109,7 @@ func Serve(addr string, cfg *config.Config, debugLogger *slog.Logger, sess *sess
 				continue
 			}
 
-			if req.Content == "/reset" {
+			if req.Content == "/compact" {
 				logger.Info("session reset requested")
 				respCh, err := a.CompactAndReset(r.Context(), cfg.Kickoff)
 				if err != nil {
