@@ -466,7 +466,10 @@ func formatBlockquote(line string) string {
 func formatNumberedList(line string) string {
 	numRe := regexp.MustCompile(`^(\d+)\.\s`)
 	if numRe.MatchString(line) {
-		return ansiGreen + "→ " + ansiReset + numRe.ReplaceAllString(line, "")
+		return numRe.ReplaceAllStringFunc(line, func(match string) string {
+			num := numRe.FindStringSubmatch(match)[1]
+			return ansiGreen + num + ". " + ansiReset
+		})
 	}
 	return line
 }
